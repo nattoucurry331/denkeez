@@ -36,7 +36,8 @@ app/dist/
 
 # ----- Tauri -----
 src-tauri/target/
-src-tauri/Cargo.lock
+# 注: Cargo.lock はアプリプロジェクトでは commit するのが Rust 公式推奨
+# (CLAUDE.md §1.4「バージョン固定」とも整合)。除外しない。
 
 # ----- 環境変数・秘匿情報 -----
 .env

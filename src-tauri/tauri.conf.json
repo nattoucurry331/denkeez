@@ -1,0 +1,45 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Denkeez",
+  "version": "0.1.0",
+  "identifier": "jp.hokurei.denkeez",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Denkeez（デンキーズ・仮称）",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost; worker-src 'self' blob:; font-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "有限会社 北嶺建設",
+    "category": "Productivity",
+    "shortDescription": "電気工事の平面図エディタ",
+    "longDescription": "元請けからの平面図 PDF 上に電気設備記号を配置し、拾い出しから見積連携までを一気通貫で支援するデスクトップアプリケーション (Phase 1 PoC)"
+  }
+}
