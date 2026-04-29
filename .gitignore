@@ -1,0 +1,78 @@
+# ==============================================
+# Denkeez プロジェクト用 .gitignore
+# ==============================================
+
+# ----- OS / エディタ -----
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# ----- Node.js -----
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm
+.pnpm-store/
+.yarn/
+
+# ----- ビルド成果物 -----
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# ----- Electron -----
+release/
+app/dist/
+
+# ----- Tauri -----
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# ----- 環境変数・秘匿情報 -----
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ----- ログ -----
+logs/
+*.log
+
+# ----- テストカバレッジ -----
+coverage/
+.nyc_output/
+
+# ----- 一時ファイル -----
+tmp/
+temp/
+*.tmp
+
+# ----- ユーザー作成プロジェクトファイル(将来のテストデータ等) -----
+# Denkeez のプロジェクトファイル形式
+*.dkz
+# ただしテスト用サンプルは除外しない
+!tests/fixtures/**/*.dkz
+!docs/samples/**/*.dkz
+
+# ----- Office ドキュメントの一時ファイル -----
+~$*.docx
+~$*.xlsx
+~$*.pptx
+
+# ----- パッケージマネージャ依存ファイル -----
+package-lock.json.bak
+yarn.lock.bak
+
+# ----- Claude Code ローカル設定 -----
+.claude/settings.local.json
