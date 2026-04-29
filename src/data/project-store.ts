@@ -25,6 +25,8 @@ export interface ProjectState {
   selectedIds: string[];
   /** 現在の操作モード */
   mode: EditorMode;
+  /** 現在開いているプロジェクトファイルの絶対パス (新規未保存時は null) */
+  currentFilePath: string | null;
 }
 
 export interface ProjectActions {
@@ -34,8 +36,11 @@ export interface ProjectActions {
     drawing: Omit<ProjectDrawing, 'type' | 'filename'>,
     canvas: HTMLCanvasElement,
   ) => void;
+  /** 永続化されたプロジェクトを state に注入する (M4) */
+  loadProject: (filePath: string, project: Project) => void;
   setDirty: (value: boolean) => void;
-  markSaved: () => void;
+  markSaved: (filePath?: string) => void;
+  setCurrentFilePath: (path: string | null) => void;
   // M3: シンボル CRUD
   addSymbol: (symbolType: ProjectSymbol['type'], position: { x: number; y: number }) => void;
   updateSymbolPosition: (id: string, position: { x: number; y: number }) => void;
@@ -76,6 +81,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()((set, get
   pdfCanvas: null,
   selectedIds: [],
   mode: { kind: 'select' },
+  currentFilePath: null,
 
   newProject: () =>
     set({
@@ -84,6 +90,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()((set, get
       pdfCanvas: null,
       selectedIds: [],
       mode: { kind: 'select' },
+      currentFilePath: null,
     }),
 
   loadPdf: (filename, drawing, canvas) => {
@@ -105,8 +112,23 @@ export const useProjectStore = create<ProjectState & ProjectActions>()((set, get
     });
   },
 
+  loadProject: (filePath, project) =>
+    set({
+      project,
+      // PDF 本体は別途再読込が必要 (PoC スコープでは PDF を JSON に同梱しない)
+      pdfCanvas: null,
+      selectedIds: [],
+      mode: { kind: 'select' },
+      dirty: false,
+      currentFilePath: filePath,
+    }),
+
   setDirty: (value) => set({ dirty: value }),
-  markSaved: () => set({ dirty: false }),
+
+  markSaved: (filePath) =>
+    set(filePath !== undefined ? { dirty: false, currentFilePath: filePath } : { dirty: false }),
+
+  setCurrentFilePath: (path) => set({ currentFilePath: path }),
 
   addSymbol: (symbolType, position) => {
     const current = get().project;
