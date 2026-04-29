@@ -43,7 +43,10 @@ export async function renderPdfPage(
     throw new Error(`[denkeez] scale must be positive, got ${scale}`);
   }
 
-  const loadingTask = pdfjsLib.getDocument({ data });
+  // PDF.js は Web Worker に ArrayBuffer を transfer するため呼び出し元の buffer が
+  // detach されてしまう。保存している pdfBuffer を回転再レンダーで再利用できるよう、
+  // 必ずコピーを渡す (Phase 2 で pdf document を保持する方式に切り替え検討)。
+  const loadingTask = pdfjsLib.getDocument({ data: data.slice(0) });
   const pdf = await loadingTask.promise;
 
   if (pageNumber < 1 || pageNumber > pdf.numPages) {
