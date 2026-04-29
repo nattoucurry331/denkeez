@@ -51,15 +51,23 @@ export function CanvasArea(): JSX.Element {
     return () => ro.disconnect();
   }, [drawing]);
 
+  // PDF 読込ごとに 1 回だけ fitToWindow を呼ぶ (canvas reference の変化で判定)。
+  // containerSize が初期値 0 のときは確定するまで待つ。
+  // ウィンドウリサイズの度には fit しない (ユーザーのズーム位置を維持)。
+  const fittedCanvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
-    if (canvas && containerSize.w > 0 && containerSize.h > 0) {
-      fitToWindow(
-        { w: canvas.width, h: canvas.height },
-        { w: containerSize.w, h: containerSize.h },
-      );
+    if (!canvas) {
+      fittedCanvasRef.current = null;
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvas, fitToWindow]);
+    if (containerSize.w === 0 || containerSize.h === 0) return;
+    if (fittedCanvasRef.current === canvas) return;
+    fitToWindow(
+      { w: canvas.width, h: canvas.height },
+      { w: containerSize.w, h: containerSize.h },
+    );
+    fittedCanvasRef.current = canvas;
+  }, [canvas, fitToWindow, containerSize.w, containerSize.h]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
