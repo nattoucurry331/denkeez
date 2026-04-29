@@ -12,6 +12,7 @@ import { useViewportStore } from '../../data/viewport-store';
 import { useViewportControls } from '../../canvas/viewport-controls';
 import { SymbolsLayer } from '../../canvas/symbols-layer';
 import { GridLayer } from '../../canvas/grid-layer';
+import { Minimap } from '../../canvas/minimap';
 import { pxToMm } from '../../utils/coordinate';
 
 export function CanvasArea(): JSX.Element {
@@ -179,6 +180,7 @@ export function CanvasArea(): JSX.Element {
     <div style={containerStyle}>
       {infoLine}
       <div ref={containerRef} style={stageContainerStyle}>
+        <Minimap containerSize={containerSize} />
         <Stage
           ref={stageRef}
           width={containerSize.w}
@@ -245,6 +247,7 @@ const stageContainerStyle: React.CSSProperties = {
   border: '1px solid #ccc',
   overflow: 'hidden',
   background: '#f8f8f8',
+  position: 'relative', // Minimap を絶対配置するため
 };
 const warnBoxStyle: React.CSSProperties = {
   padding: '16px 20px',
