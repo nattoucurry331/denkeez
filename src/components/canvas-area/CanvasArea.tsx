@@ -9,6 +9,7 @@ import type { KonvaEventObject } from 'konva/lib/Node';
 import type Konva from 'konva';
 import { useProjectStore } from '../../data/project-store';
 import { useViewportStore } from '../../data/viewport-store';
+import type { SymbolType } from '../../data/types';
 import { useViewportControls } from '../../canvas/viewport-controls';
 import { SymbolsLayer } from '../../canvas/symbols-layer';
 import { GridLayer } from '../../canvas/grid-layer';
@@ -167,7 +168,7 @@ export function CanvasArea(): JSX.Element {
     const point = stage.getRelativePointerPosition();
     if (!point) return;
     if (mode.kind === 'place') {
-      addSymbol(mode.symbolType as 'downlight', {
+      addSymbol(mode.symbolType as SymbolType, {
         x: pxToMm(point.x, scaleObj),
         y: pxToMm(point.y, scaleObj),
       });

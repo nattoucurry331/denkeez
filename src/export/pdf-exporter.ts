@@ -64,27 +64,57 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
   );
 
   // シンボルをベクター描画
+  // Phase 2-B では shape kind が 5 種に拡張されたが、PDF 出力は当面 circle-with-text のみ対応。
+  // 他の kind (square / solid / cross / half-circle) は Phase 2-D で順次対応する。
   for (const symbol of project.symbols) {
     const def = getSymbolDefinition(symbol.type);
-    if (!def) {
-      continue; // 未知のシンボル種別はスキップ (Phase 2 で警告ログを追加検討)
-    }
+    if (!def) continue;
     const { x, y } = symbol.position;
     const shape = def.shape;
 
-    pdf.setLineWidth(shape.strokeWidthMm);
     pdf.setDrawColor(0, 0, 0);
     pdf.setFillColor(255, 255, 255);
-    // 'FD' = fill + stroke (中を白で塗ってから黒線、図面のシンボル慣習)
-    pdf.circle(x, y, shape.radiusMm, 'FD');
-
-    // テキスト (中央寄せ)
     pdf.setTextColor(0, 0, 0);
-    pdf.setFontSize(shape.fontSizeMm * MM_TO_PT);
-    pdf.text(shape.text, x, y, {
-      align: 'center',
-      baseline: 'middle',
-    });
+
+    if (shape.kind === 'circle-with-text') {
+      pdf.setLineWidth(shape.strokeWidthMm);
+      pdf.circle(x, y, shape.radiusMm, 'FD');
+      if (shape.text) {
+        pdf.setFontSize(shape.fontSizeMm * MM_TO_PT);
+        pdf.text(shape.text, x, y, { align: 'center', baseline: 'middle' });
+      }
+    } else if (shape.kind === 'solid-circle-with-text') {
+      pdf.setFillColor(0, 0, 0);
+      pdf.circle(x, y, shape.radiusMm, 'F');
+      if (shape.text) {
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(shape.fontSizeMm * MM_TO_PT);
+        pdf.text(shape.text, x, y, { align: 'center', baseline: 'middle' });
+      }
+    } else if (shape.kind === 'square-with-text') {
+      pdf.setLineWidth(shape.strokeWidthMm);
+      pdf.rect(x - shape.widthMm / 2, y - shape.heightMm / 2, shape.widthMm, shape.heightMm, 'FD');
+      if (shape.text) {
+        pdf.setFontSize(shape.fontSizeMm * MM_TO_PT);
+        pdf.text(shape.text, x, y, { align: 'center', baseline: 'middle' });
+      }
+    } else if (shape.kind === 'circle-with-cross') {
+      pdf.setLineWidth(shape.strokeWidthMm);
+      pdf.circle(x, y, shape.radiusMm, 'FD');
+      // 内接 × (45° 方向、長さ = radius * sqrt(2))
+      const half = shape.radiusMm * Math.SQRT1_2;
+      pdf.line(x - half, y - half, x + half, y + half);
+      pdf.line(x - half, y + half, x + half, y - half);
+    } else if (shape.kind === 'half-circle-with-text') {
+      // 上半円 (∩ 形) は jsPDF に直接描画 API が無いため、ellipse の上半分を近似。
+      // 簡略化: 円で代用 (Phase 2-D で正式対応)。
+      pdf.setLineWidth(shape.strokeWidthMm);
+      pdf.circle(x, y, shape.radiusMm, 'FD');
+      if (shape.text) {
+        pdf.setFontSize(shape.fontSizeMm * MM_TO_PT);
+        pdf.text(shape.text, x, y, { align: 'center', baseline: 'middle' });
+      }
+    }
   }
 
   const buffer = pdf.output('arraybuffer');

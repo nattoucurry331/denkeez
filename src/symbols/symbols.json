@@ -1,14 +1,142 @@
 [
   {
+    "id": "general-light",
+    "name": "一般照明",
+    "category": "lighting",
+    "description": "JIS C 0303 — 円のみ",
+    "shape": { "kind": "circle-with-text", "radiusMm": 2.5, "strokeWidthMm": 0.3, "text": "", "fontSizeMm": 2.2 }
+  },
+  {
     "id": "downlight",
     "name": "ダウンライト",
-    "description": "JIS C 0303 準拠 — DL を内包した円。Phase 1 PoC ではこの 1 種類のみ。",
-    "shape": {
-      "kind": "circle-with-text",
-      "radiusMm": 2.5,
-      "strokeWidthMm": 0.3,
-      "text": "DL",
-      "fontSizeMm": 2.2
-    }
+    "category": "lighting",
+    "description": "JIS C 0303 — DL を内包した円",
+    "shape": { "kind": "circle-with-text", "radiusMm": 2.5, "strokeWidthMm": 0.3, "text": "DL", "fontSizeMm": 2.2 }
+  },
+  {
+    "id": "fluorescent",
+    "name": "蛍光灯",
+    "category": "lighting",
+    "description": "JIS C 0303 — 長方形 + FL",
+    "shape": { "kind": "square-with-text", "widthMm": 6, "heightMm": 2.5, "strokeWidthMm": 0.3, "text": "FL", "fontSizeMm": 1.8 }
+  },
+  {
+    "id": "ceiling-light",
+    "name": "シーリングライト",
+    "category": "lighting",
+    "description": "JIS C 0303 — 円 + 内部に ×",
+    "shape": { "kind": "circle-with-cross", "radiusMm": 2.5, "strokeWidthMm": 0.3 }
+  },
+  {
+    "id": "pull-cord-ceiling",
+    "name": "引掛シーリング",
+    "category": "lighting",
+    "description": "JIS C 0303 — R を内包した円",
+    "shape": { "kind": "circle-with-text", "radiusMm": 2.5, "strokeWidthMm": 0.3, "text": "R", "fontSizeMm": 2.2 }
+  },
+  {
+    "id": "pendant-light",
+    "name": "ペンダント",
+    "category": "lighting",
+    "description": "JIS C 0303 — P を内包した円",
+    "shape": { "kind": "circle-with-text", "radiusMm": 2.5, "strokeWidthMm": 0.3, "text": "P", "fontSizeMm": 2.2 }
+  },
+  {
+    "id": "switch-1pole",
+    "name": "単極スイッチ",
+    "category": "switch",
+    "description": "JIS C 0303 — 黒丸",
+    "shape": { "kind": "solid-circle-with-text", "radiusMm": 2, "text": "", "fontSizeMm": 1.8 }
+  },
+  {
+    "id": "switch-3way",
+    "name": "3 路スイッチ",
+    "category": "switch",
+    "description": "JIS C 0303 — 黒丸 + 3",
+    "shape": { "kind": "solid-circle-with-text", "radiusMm": 2, "text": "3", "fontSizeMm": 1.8 }
+  },
+  {
+    "id": "switch-4way",
+    "name": "4 路スイッチ",
+    "category": "switch",
+    "description": "JIS C 0303 — 黒丸 + 4",
+    "shape": { "kind": "solid-circle-with-text", "radiusMm": 2, "text": "4", "fontSizeMm": 1.8 }
+  },
+  {
+    "id": "switch-dimmer",
+    "name": "調光スイッチ",
+    "category": "switch",
+    "description": "JIS C 0303 — 黒丸 + D",
+    "shape": { "kind": "solid-circle-with-text", "radiusMm": 2, "text": "D", "fontSizeMm": 1.8 }
+  },
+  {
+    "id": "switch-auto",
+    "name": "自動点滅器",
+    "category": "switch",
+    "description": "JIS C 0303 — 黒丸 + A",
+    "shape": { "kind": "solid-circle-with-text", "radiusMm": 2, "text": "A", "fontSizeMm": 1.8 }
+  },
+  {
+    "id": "outlet-general",
+    "name": "一般コンセント",
+    "category": "outlet",
+    "description": "JIS C 0303 — 半円",
+    "shape": { "kind": "half-circle-with-text", "radiusMm": 2.5, "strokeWidthMm": 0.3, "text": "", "fontSizeMm": 1.6 }
+  },
+  {
+    "id": "outlet-waterproof",
+    "name": "防水コンセント",
+    "category": "outlet",
+    "description": "JIS C 0303 — 半円 + WP",
+    "shape": { "kind": "half-circle-with-text", "radiusMm": 2.5, "strokeWidthMm": 0.3, "text": "WP", "fontSizeMm": 1.4 }
+  },
+  {
+    "id": "outlet-ground",
+    "name": "接地極付コンセント",
+    "category": "outlet",
+    "description": "JIS C 0303 — 半円 + E",
+    "shape": { "kind": "half-circle-with-text", "radiusMm": 2.5, "strokeWidthMm": 0.3, "text": "E", "fontSizeMm": 1.6 }
+  },
+  {
+    "id": "outlet-200v",
+    "name": "200V コンセント",
+    "category": "outlet",
+    "description": "JIS C 0303 — 半円 + 200V",
+    "shape": { "kind": "half-circle-with-text", "radiusMm": 2.5, "strokeWidthMm": 0.3, "text": "200V", "fontSizeMm": 1.2 }
+  },
+  {
+    "id": "tv-outlet",
+    "name": "TV 端子",
+    "category": "low-voltage",
+    "description": "JIS C 0303 — 四角 + TV",
+    "shape": { "kind": "square-with-text", "widthMm": 4, "heightMm": 4, "strokeWidthMm": 0.3, "text": "TV", "fontSizeMm": 1.6 }
+  },
+  {
+    "id": "lan-outlet",
+    "name": "LAN",
+    "category": "low-voltage",
+    "description": "JIS C 0303 — 四角 + LAN",
+    "shape": { "kind": "square-with-text", "widthMm": 4, "heightMm": 4, "strokeWidthMm": 0.3, "text": "LAN", "fontSizeMm": 1.4 }
+  },
+  {
+    "id": "phone-outlet",
+    "name": "電話",
+    "category": "low-voltage",
+    "description": "JIS C 0303 — 四角 + TEL",
+    "shape": { "kind": "square-with-text", "widthMm": 4, "heightMm": 4, "strokeWidthMm": 0.3, "text": "TEL", "fontSizeMm": 1.4 }
+  },
+  {
+    "id": "ventilation-fan",
+    "name": "換気扇",
+    "category": "other",
+    "description": "JIS C 0303 — 円 + 内部に ×",
+    "shape": { "kind": "circle-with-cross", "radiusMm": 3, "strokeWidthMm": 0.3 }
+  },
+  {
+    "id": "smoke-detector",
+    "name": "火災感知器(煙)",
+    "category": "other",
+    "description": "JIS C 0303 — 円 + S",
+    "shape": { "kind": "circle-with-text", "radiusMm": 2.5, "strokeWidthMm": 0.3, "text": "S", "fontSizeMm": 2.2 }
   }
 ]
