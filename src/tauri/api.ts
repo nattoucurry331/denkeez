@@ -3,10 +3,10 @@
 // CSP / permissions は src-tauri/capabilities/default.json を参照。
 
 import { open, save } from '@tauri-apps/plugin-dialog';
-import { readFile, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import { readFile, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { APP_FILE_EXTENSION } from '../shared/constants/app';
 
-/** PDF ファイル選択ダイアログを表示。キャンセル時は null を返す。 */
+/** PDF ファイル選択ダイアログを表示 (取込み用)。キャンセル時は null を返す。 */
 export async function selectPdfFile(): Promise<string | null> {
   const selected = await open({
     multiple: false,
@@ -41,6 +41,15 @@ export async function selectProjectFileToSave(defaultName?: string): Promise<str
   return path;
 }
 
+/** PDF 出力先選択ダイアログ (M5)。 */
+export async function selectPdfFileToSave(defaultName?: string): Promise<string | null> {
+  const path = await save({
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    defaultPath: defaultName ?? 'denkeez-export.pdf',
+  });
+  return path;
+}
+
 /** ファイルパスからバイナリを読み込み ArrayBuffer として返す。 */
 export async function readBinaryFile(path: string): Promise<ArrayBuffer> {
   const bytes = await readFile(path);
@@ -58,6 +67,11 @@ export async function readProjectFile(path: string): Promise<string> {
 /** プロジェクトファイル (text) を書込。 */
 export async function writeProjectFile(path: string, content: string): Promise<void> {
   await writeTextFile(path, content);
+}
+
+/** バイナリファイル書込 (M5: PDF 出力用)。 */
+export async function writeBinaryFile(path: string, data: Uint8Array): Promise<void> {
+  await writeFile(path, data);
 }
 
 /** Windows / Unix 両対応のファイル名抽出。 */

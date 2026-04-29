@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Denkeez Phase 1 PoC の最小権限セット (Plan §3 / R-07)。プロジェクトファイル(JSON)読み書き、PDF バイナリ読込、ファイルダイアログ、close-requested 用の window 操作のみ許可。",
+  "description": "Denkeez Phase 1 PoC の最小権限セット (Plan §3 / R-07)。プロジェクトファイル(JSON)読み書き、PDF バイナリ読込/書込、ファイルダイアログ、close-requested 用の window 操作のみ許可。",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -12,6 +12,7 @@
     "dialog:allow-save",
     "fs:allow-read-file",
     "fs:allow-read-text-file",
+    "fs:allow-write-file",
     "fs:allow-write-text-file"
   ]
 }
