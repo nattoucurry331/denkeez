@@ -27,6 +27,7 @@
     "react-konva": "^18.2.0",
     "svg2pdf.js": "^2.5.0",
     "zod": "^3.23.0",
+    "zundo": "^2.3.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

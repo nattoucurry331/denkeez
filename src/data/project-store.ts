@@ -6,8 +6,10 @@
 // 被せれば実装可能 (state 全体スナップショットを履歴に積む方式)。
 
 import { create } from 'zustand';
+import { temporal } from 'zundo';
 import { generateId } from '../utils/id';
 import { APP_VERSION, SCHEMA_VERSION } from '../shared/constants/app';
+import { debounce } from '../utils/debounce';
 import type { Rotation } from '../pdf/pdf-loader';
 import type { Project, ProjectDrawing, ProjectSymbol } from './types';
 import { DEFAULT_GRID_CONFIG } from './types';
@@ -92,7 +94,12 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-export const useProjectStore = create<ProjectState & ProjectActions>()((set, get) => ({
+// Phase 2-A4: zundo (temporal middleware) でアンドゥ・リドゥを実装。
+// partialize: project のみ履歴に含める (UI state や DOM = pdfCanvas/pdfBuffer/mode/selectedIds は除外)
+// limit: 50 件まで
+// handleSet: 連続更新 (ドラッグ中の updateSymbolPosition 60件/秒) を 100ms debounce で 1 件に間引く
+export const useProjectStore = create<ProjectState & ProjectActions>()(
+  temporal((set, get) => ({
   project: createEmptyProject(),
   dirty: false,
   pdfCanvas: null,
@@ -268,4 +275,10 @@ export const useProjectStore = create<ProjectState & ProjectActions>()((set, get
       dirty: true,
     });
   },
-}));
+  }),
+  {
+    partialize: (state) => ({ project: state.project }),
+    limit: 50,
+    handleSet: (handleSet) => debounce(handleSet, 100),
+  }),
+);

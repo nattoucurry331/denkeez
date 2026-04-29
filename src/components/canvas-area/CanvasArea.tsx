@@ -13,6 +13,7 @@ import { useViewportControls } from '../../canvas/viewport-controls';
 import { SymbolsLayer } from '../../canvas/symbols-layer';
 import { GridLayer } from '../../canvas/grid-layer';
 import { Minimap } from '../../canvas/minimap';
+import { useKeyboardShortcuts } from '../../hooks/use-keyboard-shortcuts';
 import { pxToMm } from '../../utils/coordinate';
 
 export function CanvasArea(): JSX.Element {
@@ -85,6 +86,14 @@ export function CanvasArea(): JSX.Element {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [mode.kind, selectedIds, exitMode, clearSelection, removeSymbols]);
+
+  // グローバル KB ショートカット (Ctrl+Z/Y/+/-/0/G) — Phase 2-A4
+  useKeyboardShortcuts({
+    getViewportCenter: () =>
+      containerSize.w > 0 && containerSize.h > 0
+        ? { x: containerSize.w / 2, y: containerSize.h / 2 }
+        : null,
+  });
 
   if (!drawing) {
     return (
