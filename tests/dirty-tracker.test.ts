@@ -34,11 +34,13 @@ describe('project-store dirty flag', () => {
 
   it('loadPdf は dirty を変更しない (PDF を開いただけでは未保存変更にならない)', () => {
     const dummyCanvas = { width: 100, height: 100 } as unknown as HTMLCanvasElement;
+    const dummyBuffer = new ArrayBuffer(0);
     useProjectStore.getState().setDirty(true);
     useProjectStore.getState().loadPdf(
       'sample.pdf',
       { selectedPage: 1, widthMm: 297, heightMm: 420 },
       dummyCanvas,
+      dummyBuffer,
     );
     // loadPdf は PDF 取込なので、ユーザーの編集差分はまだ無い → dirty は false にリセット
     expect(isDirty()).toBe(false);

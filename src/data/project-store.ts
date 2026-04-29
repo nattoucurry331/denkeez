@@ -8,6 +8,7 @@
 import { create } from 'zustand';
 import { generateId } from '../utils/id';
 import { APP_VERSION, SCHEMA_VERSION } from '../shared/constants/app';
+import type { Rotation } from '../pdf/pdf-loader';
 import type { Project, ProjectDrawing, ProjectSymbol } from './types';
 
 /** 操作モード。配置モード時は symbolType を保持する。 */
@@ -21,6 +22,10 @@ export interface ProjectState {
   dirty: boolean;
   /** PDF 1 ページ目のレンダー結果 (背景表示用、永続化対象外) */
   pdfCanvas: HTMLCanvasElement | null;
+  /** 元 PDF のバイトデータ (回転再レンダー用、永続化対象外) */
+  pdfBuffer: ArrayBuffer | null;
+  /** 現在の PDF 表示回転 (0/90/180/270) */
+  pdfRotation: Rotation;
   /** 選択中のシンボル ID 配列 */
   selectedIds: string[];
   /** 現在の操作モード */
@@ -35,9 +40,17 @@ export interface ProjectActions {
     filename: string,
     drawing: Omit<ProjectDrawing, 'type' | 'filename'>,
     canvas: HTMLCanvasElement,
+    buffer: ArrayBuffer,
   ) => void;
   /** 永続化されたプロジェクトを state に注入する (M4) */
   loadProject: (filePath: string, project: Project) => void;
+  /** PDF を回転して再レンダーした結果を反映する (M5 追加機能) */
+  applyPdfRotation: (
+    rotation: Rotation,
+    canvas: HTMLCanvasElement,
+    widthMm: number,
+    heightMm: number,
+  ) => void;
   setDirty: (value: boolean) => void;
   markSaved: (filePath?: string) => void;
   setCurrentFilePath: (path: string | null) => void;
@@ -79,6 +92,8 @@ export const useProjectStore = create<ProjectState & ProjectActions>()((set, get
   project: createEmptyProject(),
   dirty: false,
   pdfCanvas: null,
+  pdfBuffer: null,
+  pdfRotation: 0,
   selectedIds: [],
   mode: { kind: 'select' },
   currentFilePath: null,
@@ -88,12 +103,14 @@ export const useProjectStore = create<ProjectState & ProjectActions>()((set, get
       project: createEmptyProject(),
       dirty: false,
       pdfCanvas: null,
+      pdfBuffer: null,
+      pdfRotation: 0,
       selectedIds: [],
       mode: { kind: 'select' },
       currentFilePath: null,
     }),
 
-  loadPdf: (filename, drawing, canvas) => {
+  loadPdf: (filename, drawing, canvas, buffer) => {
     const current = get().project;
     set({
       project: {
@@ -108,6 +125,8 @@ export const useProjectStore = create<ProjectState & ProjectActions>()((set, get
         meta: { ...current.meta, updatedAt: nowIso() },
       },
       pdfCanvas: canvas,
+      pdfBuffer: buffer,
+      pdfRotation: 0,
       dirty: false,
     });
   },
@@ -117,11 +136,29 @@ export const useProjectStore = create<ProjectState & ProjectActions>()((set, get
       project,
       // PDF 本体は別途再読込が必要 (PoC スコープでは PDF を JSON に同梱しない)
       pdfCanvas: null,
+      pdfBuffer: null,
+      pdfRotation: 0,
       selectedIds: [],
       mode: { kind: 'select' },
       dirty: false,
       currentFilePath: filePath,
     }),
+
+  applyPdfRotation: (rotation, canvas, widthMm, heightMm) => {
+    const current = get().project;
+    if (!current.drawing) return;
+    set({
+      project: {
+        ...current,
+        drawing: { ...current.drawing, widthMm, heightMm },
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      pdfCanvas: canvas,
+      pdfRotation: rotation,
+      // 回転後のシンボル位置の整合性は呼び出し側で扱う (シンボル削除前提)。
+      // dirty は呼び出し側で setDirty(true) する。
+    });
+  },
 
   setDirty: (value) => set({ dirty: value }),
 
