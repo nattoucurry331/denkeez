@@ -37,10 +37,43 @@ export function CanvasArea(): JSX.Element {
     return () => window.removeEventListener('keydown', handler);
   }, [mode.kind, selectedIds, exitMode, clearSelection, removeSymbols]);
 
-  if (!drawing || !canvas) {
+  // 新規プロジェクトで PDF も未取込の場合
+  if (!drawing) {
     return (
       <div style={emptyStyle}>
-        <p>メニューから PDF を開いてください</p>
+        <p>「ファイル → PDF を開く」で開始してください</p>
+        <p style={mutedStyle}>または「開く」で保存済みプロジェクトを読み込めます</p>
+      </div>
+    );
+  }
+
+  const infoLine = (
+    <p style={infoStyle}>
+      <code>{drawing.filename}</code> / 実寸{' '}
+      {drawing.widthMm.toFixed(0)} × {drawing.heightMm.toFixed(0)} mm / シンボル{' '}
+      <strong>{symbols.length}</strong> 個
+      {selectedIds.length > 0 && <span> (選択中 {selectedIds.length})</span>}
+      {mode.kind === 'place' && (
+        <span style={modeBadgeStyle}> 配置モード: {mode.symbolType} (ESC で解除)</span>
+      )}
+    </p>
+  );
+
+  // プロジェクトを開いた直後 (drawing は復元、canvas はまだ null)
+  // PoC 仕様: .dkz には PDF 本体を同梱しないため、再選択が必要
+  if (!canvas) {
+    return (
+      <div style={containerStyle}>
+        {infoLine}
+        <div style={warnBoxStyle}>
+          <p style={warnTitleStyle}>PDF 背景が未読込です</p>
+          <p>
+            「ファイル → PDF を開く」で <code>{drawing.filename}</code> (または同等の PDF) を再選択してください。
+          </p>
+          <p style={mutedStyle}>
+            (Phase 1 PoC では .dkz に PDF を同梱していません。Phase 2 で .dkz=ZIP 化時に同梱予定)
+          </p>
+        </div>
       </div>
     );
   }
@@ -70,15 +103,7 @@ export function CanvasArea(): JSX.Element {
 
   return (
     <div style={containerStyle}>
-      <p style={infoStyle}>
-        <code>{drawing.filename}</code> / 実寸{' '}
-        {drawing.widthMm.toFixed(0)} × {drawing.heightMm.toFixed(0)} mm / シンボル{' '}
-        <strong>{symbols.length}</strong> 個
-        {selectedIds.length > 0 && <span> (選択中 {selectedIds.length})</span>}
-        {mode.kind === 'place' && (
-          <span style={modeBadgeStyle}> 配置モード: {mode.symbolType} (ESC で解除)</span>
-        )}
-      </p>
+      {infoLine}
       <div style={stageContainerStyle}>
         <Stage
           width={canvas.width}
@@ -100,9 +125,15 @@ export function CanvasArea(): JSX.Element {
 const emptyStyle: React.CSSProperties = {
   flex: 1,
   display: 'flex',
+  flexDirection: 'column',
   alignItems: 'center',
   justifyContent: 'center',
   color: '#666',
+  gap: 8,
+};
+const mutedStyle: React.CSSProperties = {
+  color: '#999',
+  fontSize: '0.85rem',
 };
 const containerStyle: React.CSSProperties = {
   flex: 1,
@@ -128,4 +159,16 @@ const stageContainerStyle: React.CSSProperties = {
   flex: 1,
   border: '1px solid #ccc',
   overflow: 'auto',
+};
+const warnBoxStyle: React.CSSProperties = {
+  padding: '16px 20px',
+  background: '#fff8e0',
+  border: '1px solid #f0c060',
+  borderRadius: 6,
+  color: '#5a4400',
+};
+const warnTitleStyle: React.CSSProperties = {
+  fontWeight: 'bold',
+  marginTop: 0,
+  fontSize: '0.95rem',
 };
