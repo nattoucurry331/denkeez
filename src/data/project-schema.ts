@@ -37,7 +37,7 @@ const ProjectSymbolSchema = z.object({
 
 const ProjectGridConfigSchema = z.object({
   enabled: z.boolean(),
-  spacingMm: z.union([z.literal(910), z.literal(455)]),
+  spacingMm: z.union([z.literal(100), z.literal(50)]),
   color: z.string().min(1),
 });
 

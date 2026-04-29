@@ -38,15 +38,22 @@ export interface ProjectSymbol {
 /** Phase 2-A2: グリッド表示設定 (Project に永続化) */
 export interface ProjectGridConfig {
   enabled: boolean;
-  /** グリッド間隔 (mm)。和室基準で 910 / 455 を切替 */
-  spacingMm: 910 | 455;
+  /**
+   * グリッド間隔 (mm)。
+   * Phase 1 PoC〜2-A では F-04 (スケール設定) 未実装のため、紙面実寸として扱う。
+   * 暫定候補は 100/50mm。Phase 2-C で F-04 実装後に「和室基準 910/455mm = 縮尺込みの施工実寸」へ戻す予定。
+   */
+  spacingMm: 100 | 50;
   /** 線色 (HEX) */
   color: string;
 }
 
+/** UI で選択可能な spacing 候補 (Phase 2-A 暫定) */
+export const GRID_SPACING_OPTIONS: ProjectGridConfig['spacingMm'][] = [100, 50];
+
 export const DEFAULT_GRID_CONFIG: ProjectGridConfig = {
   enabled: false,
-  spacingMm: 910,
+  spacingMm: 100,
   color: '#cccccc',
 };
 

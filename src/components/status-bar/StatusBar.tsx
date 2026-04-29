@@ -4,7 +4,7 @@
 
 import { useProjectStore } from '../../data/project-store';
 import { useViewportStore } from '../../data/viewport-store';
-import { DEFAULT_GRID_CONFIG } from '../../data/types';
+import { DEFAULT_GRID_CONFIG, GRID_SPACING_OPTIONS } from '../../data/types';
 
 export function StatusBar(): JSX.Element {
   const scale = useViewportStore((s) => s.scale);
@@ -37,13 +37,16 @@ export function StatusBar(): JSX.Element {
       </label>
       <select
         value={grid.spacingMm}
-        onChange={(e) => setGridSpacing(Number(e.target.value) as 910 | 455)}
+        onChange={(e) => setGridSpacing(Number(e.target.value) as 100 | 50)}
         disabled={!grid.enabled}
         style={selectStyle}
         aria-label="グリッド間隔"
       >
-        <option value={910}>910mm</option>
-        <option value={455}>455mm</option>
+        {GRID_SPACING_OPTIONS.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}mm
+          </option>
+        ))}
       </select>
     </footer>
   );

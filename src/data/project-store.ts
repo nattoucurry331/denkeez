@@ -69,7 +69,7 @@ export interface ProjectActions {
   exitMode: () => void;
   // Phase 2-A2: グリッド
   toggleGrid: () => void;
-  setGridSpacing: (spacing: 910 | 455) => void;
+  setGridSpacing: (spacing: 100 | 50) => void;
 }
 
 function createEmptyProject(): Project {

@@ -37,7 +37,10 @@ export function CanvasArea(): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerSize, setContainerSize] = useState({ w: 800, h: 600 });
 
+  // drawing が設定されてから containerRef が ref を取れるので、
+  // depends に drawing を入れて PDF 読込後に effect が走るようにする
   useEffect(() => {
+    if (!drawing) return;
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
@@ -46,7 +49,7 @@ export function CanvasArea(): JSX.Element {
     ro.observe(el);
     setContainerSize({ w: el.clientWidth, h: el.clientHeight });
     return () => ro.disconnect();
-  }, []);
+  }, [drawing]);
 
   useEffect(() => {
     if (canvas && containerSize.w > 0 && containerSize.h > 0) {
