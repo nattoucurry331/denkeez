@@ -1,9 +1,9 @@
 // 上部メニューバー (Plan §3 / REQUIREMENTS.md §6.1)。
-// M1: PDF を開く / M3 dirty テスト / M4: 新規・開く・保存・名前を付けて保存 / M5: PDF 出力
+// M1: PDF を開く / M3 dirty テスト / M4: 新規・開く・保存 / M5: PDF 出力 + 90° 回転
 
 import { useState } from 'react';
 import { useProjectStore } from '../../data/project-store';
-import { renderPdfPage } from '../../pdf/pdf-loader';
+import { renderPdfPage, type Rotation } from '../../pdf/pdf-loader';
 import {
   selectPdfFile,
   selectProjectFileToOpen,
@@ -24,11 +24,15 @@ export function MenuBar(): JSX.Element {
   const dirty = useProjectStore((s) => s.dirty);
   const currentFilePath = useProjectStore((s) => s.currentFilePath);
   const pdfCanvas = useProjectStore((s) => s.pdfCanvas);
+  const pdfBuffer = useProjectStore((s) => s.pdfBuffer);
+  const pdfRotation = useProjectStore((s) => s.pdfRotation);
   const loadPdf = useProjectStore((s) => s.loadPdf);
   const loadProject = useProjectStore((s) => s.loadProject);
   const newProject = useProjectStore((s) => s.newProject);
   const markSaved = useProjectStore((s) => s.markSaved);
   const setDirty = useProjectStore((s) => s.setDirty);
+  const applyPdfRotation = useProjectStore((s) => s.applyPdfRotation);
+  const removeSymbols = useProjectStore((s) => s.removeSymbols);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -63,7 +67,7 @@ export function MenuBar(): JSX.Element {
       const path = await selectPdfFile();
       if (!path) return;
       const buffer = await readBinaryFile(path);
-      const rendered = await renderPdfPage(buffer, 1, 2.0);
+      const rendered = await renderPdfPage(buffer, 1, 2.0, 0);
       loadPdf(
         basename(path),
         {
@@ -72,6 +76,7 @@ export function MenuBar(): JSX.Element {
           heightMm: ptToMm(rendered.heightPt),
         },
         rendered.canvas,
+        buffer,
       );
     });
 
@@ -122,6 +127,30 @@ export function MenuBar(): JSX.Element {
       setInfo(`PDF を出力しました: ${basename(path)}`);
     });
 
+  const handleRotatePdf = (): Promise<void> =>
+    wrap(async () => {
+      if (!pdfBuffer || !project.drawing) {
+        throw new Error('先に「ファイル → PDF を開く」で図面を読み込んでください');
+      }
+      const symbolCount = project.symbols.length;
+      if (
+        symbolCount > 0 &&
+        !window.confirm(
+          `配置済みシンボル ${symbolCount} 個 は座標系が変わるため削除されます。続行しますか?`,
+        )
+      ) {
+        return;
+      }
+      const next = ((pdfRotation + 90) % 360) as Rotation;
+      const rendered = await renderPdfPage(pdfBuffer, project.drawing.selectedPage, 2.0, next);
+      if (symbolCount > 0) {
+        removeSymbols(project.symbols.map((s) => s.id));
+      }
+      applyPdfRotation(next, rendered.canvas, ptToMm(rendered.widthPt), ptToMm(rendered.heightPt));
+      setDirty(symbolCount > 0);
+      setInfo(`PDF を ${next}° に回転しました`);
+    });
+
   return (
     <header style={menuBarStyle}>
       <button onClick={handleNew} disabled={busy} type="button">
@@ -139,6 +168,14 @@ export function MenuBar(): JSX.Element {
       <span style={separatorStyle}>|</span>
       <button onClick={handleOpenPdf} disabled={busy} type="button">
         ファイル → PDF を開く
+      </button>
+      <button
+        onClick={handleRotatePdf}
+        disabled={busy || !pdfBuffer}
+        type="button"
+        title={pdfBuffer ? `現在 ${pdfRotation}°、押すと +90°` : 'PDF を読み込むと有効'}
+      >
+        PDF 90° 回転
       </button>
       <button onClick={handleExportPdf} disabled={busy || !pdfCanvas} type="button">
         PDF 出力
