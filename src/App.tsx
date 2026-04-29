@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MenuBar } from './components/menu-bar/MenuBar';
 import { CanvasArea } from './components/canvas-area/CanvasArea';
+import { SymbolPalette } from './components/symbol-palette/SymbolPalette';
 import { UnsavedChangesDialog } from './components/dialogs/UnsavedChangesDialog';
 import {
   registerCloseConfirmHandler,
@@ -10,11 +11,11 @@ import {
 
 export function App(): JSX.Element {
   const [confirmOpen, setConfirmOpen] = useState(false);
-  // ダイアログの結果を Promise の resolver 経由で close-handler に返すため、ref で保持
   const resolverRef = useRef<((decision: CloseDecision) => void) | null>(null);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let cancelled = false;
     registerCloseConfirmHandler(
       () =>
         new Promise<CloseDecision>((resolve) => {
@@ -22,10 +23,15 @@ export function App(): JSX.Element {
           setConfirmOpen(true);
         }),
     );
-    void setupCloseHandler().then((u) => {
-      unlisten = u;
+    setupCloseHandler().then((u) => {
+      if (cancelled) {
+        u();
+      } else {
+        unlisten = u;
+      }
     });
     return () => {
+      cancelled = true;
       unlisten?.();
     };
   }, []);
@@ -39,7 +45,10 @@ export function App(): JSX.Element {
   return (
     <div style={appStyle}>
       <MenuBar />
-      <CanvasArea />
+      <div style={mainStyle}>
+        <SymbolPalette />
+        <CanvasArea />
+      </div>
       <UnsavedChangesDialog
         open={confirmOpen}
         onSave={() => decide('save')}
@@ -55,4 +64,9 @@ const appStyle: React.CSSProperties = {
   flexDirection: 'column',
   height: '100vh',
   fontFamily: 'system-ui, sans-serif',
+};
+const mainStyle: React.CSSProperties = {
+  display: 'flex',
+  flex: 1,
+  overflow: 'hidden',
 };

@@ -1,0 +1,14 @@
+[
+  {
+    "id": "downlight",
+    "name": "ダウンライト",
+    "description": "JIS C 0303 準拠 — DL を内包した円。Phase 1 PoC ではこの 1 種類のみ。",
+    "shape": {
+      "kind": "circle-with-text",
+      "radiusMm": 75,
+      "strokeWidthMm": 2,
+      "text": "DL",
+      "fontSizeMm": 60
+    }
+  }
+]
