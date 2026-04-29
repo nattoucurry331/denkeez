@@ -1,6 +1,7 @@
 // 図面キャンバス (Plan §3 / REQUIREMENTS.md §6.1)。
 // PDF を背景レイヤーに、シンボルを上位レイヤーに描画する。
 // Phase 2-A1: ビューポートのズーム / パン (Stage の scale + offset、ViewportControls 経由)。
+// Phase 2-A2: GridLayer 統合 + cursorMm 発信 (StatusBar 表示用)。
 
 import { useEffect, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage } from 'react-konva';
@@ -10,6 +11,7 @@ import { useProjectStore } from '../../data/project-store';
 import { useViewportStore } from '../../data/viewport-store';
 import { useViewportControls } from '../../canvas/viewport-controls';
 import { SymbolsLayer } from '../../canvas/symbols-layer';
+import { GridLayer } from '../../canvas/grid-layer';
 import { pxToMm } from '../../utils/coordinate';
 
 export function CanvasArea(): JSX.Element {
@@ -28,13 +30,13 @@ export function CanvasArea(): JSX.Element {
   const offsetY = useViewportStore((s) => s.offsetY);
   const spaceDown = useViewportStore((s) => s.spaceDown);
   const fitToWindow = useViewportStore((s) => s.fitToWindow);
+  const setCursorMm = useViewportStore((s) => s.setCursorMm);
 
   const viewportControls = useViewportControls();
   const stageRef = useRef<Konva.Stage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerSize, setContainerSize] = useState({ w: 800, h: 600 });
 
-  // ResizeObserver でコンテナサイズを追跡
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -46,7 +48,6 @@ export function CanvasArea(): JSX.Element {
     return () => ro.disconnect();
   }, []);
 
-  // PDF 読み込み直後に図面全体をフィット表示
   useEffect(() => {
     if (canvas && containerSize.w > 0 && containerSize.h > 0) {
       fitToWindow(
@@ -57,7 +58,6 @@ export function CanvasArea(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvas, fitToWindow]);
 
-  // キーボードショートカット (CLAUDE.md L197 Windows 標準準拠)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -112,26 +112,43 @@ export function CanvasArea(): JSX.Element {
     );
   }
 
-  // 1mm あたりのスクリーンピクセル数 (REQUIREMENTS.md §9.1.1: utils/coordinate に集約)
   const pxPerMm = canvas.width / drawing.widthMm;
+  const scaleObj = { pxPerMm };
 
-  // Stage の物理サイズはコンテナにフィット、内部 content は viewport state で transform
   const handleStageMouseDown = (e: KonvaEventObject<MouseEvent>) => {
     viewportControls.onMouseDown(e);
   };
 
+  const handleStageMouseMove = (e: KonvaEventObject<MouseEvent>) => {
+    viewportControls.onMouseMove(e);
+    const stage = e.target.getStage();
+    if (!stage) return;
+    const point = stage.getRelativePointerPosition();
+    if (!point) {
+      setCursorMm(null);
+      return;
+    }
+    setCursorMm({
+      x: pxToMm(point.x, scaleObj),
+      y: pxToMm(point.y, scaleObj),
+    });
+  };
+
+  const handleStageMouseLeave = () => {
+    setCursorMm(null);
+    viewportControls.onMouseUp({} as KonvaEventObject<MouseEvent>);
+  };
+
   const handleStageClick = (e: KonvaEventObject<MouseEvent>) => {
-    // パン中はクリック扱いしない
     if (spaceDown) return;
     const stage = e.target.getStage();
     if (!stage) return;
-    // getRelativePointerPosition() は scale + offset を補正済み (R-A5)
     const point = stage.getRelativePointerPosition();
     if (!point) return;
     if (mode.kind === 'place') {
       addSymbol(mode.symbolType as 'downlight', {
-        x: pxToMm(point.x, { pxPerMm }),
-        y: pxToMm(point.y, { pxPerMm }),
+        x: pxToMm(point.x, scaleObj),
+        y: pxToMm(point.y, scaleObj),
       });
     } else if (e.target === stage) {
       clearSelection();
@@ -161,8 +178,9 @@ export function CanvasArea(): JSX.Element {
           y={offsetY}
           onWheel={viewportControls.onWheel}
           onMouseDown={handleStageMouseDown}
-          onMouseMove={viewportControls.onMouseMove}
+          onMouseMove={handleStageMouseMove}
           onMouseUp={viewportControls.onMouseUp}
+          onMouseLeave={handleStageMouseLeave}
           onClick={handleStageClick}
           onTap={handleStageClick}
           style={{ cursor }}
@@ -170,6 +188,7 @@ export function CanvasArea(): JSX.Element {
           <Layer listening={false}>
             <KonvaImage image={canvas} />
           </Layer>
+          <GridLayer pxPerMm={pxPerMm} canvasWidth={canvas.width} canvasHeight={canvas.height} />
           <SymbolsLayer pxPerMm={pxPerMm} />
         </Stage>
       </div>

@@ -16,6 +16,8 @@ export interface ViewportState {
   offsetY: number;
   /** Space キー押下中 (パンモード) */
   spaceDown: boolean;
+  /** カーソル位置 (mm)。Stage 上に無いときは null */
+  cursorMm: { x: number; y: number } | null;
 }
 
 export interface ViewportActions {
@@ -34,6 +36,7 @@ export interface ViewportActions {
    */
   fitToWindow: (canvasPx: { w: number; h: number }, viewportPx: { w: number; h: number }) => void;
   setSpaceDown: (down: boolean) => void;
+  setCursorMm: (mm: { x: number; y: number } | null) => void;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -45,6 +48,7 @@ export const useViewportStore = create<ViewportState & ViewportActions>()((set, 
   offsetX: 0,
   offsetY: 0,
   spaceDown: false,
+  cursorMm: null,
 
   setScale: (scale) => set({ scale: clamp(scale, MIN_SCALE, MAX_SCALE) }),
   setOffset: (offsetX, offsetY) => set({ offsetX, offsetY }),
@@ -77,6 +81,7 @@ export const useViewportStore = create<ViewportState & ViewportActions>()((set, 
   },
 
   setSpaceDown: (down) => set({ spaceDown: down }),
+  setCursorMm: (mm) => set({ cursorMm: mm }),
 }));
 
 export const VIEWPORT_LIMITS = { MIN_SCALE, MAX_SCALE } as const;

@@ -35,10 +35,17 @@ const ProjectSymbolSchema = z.object({
   properties: z.record(z.string(), z.unknown()),
 });
 
+const ProjectGridConfigSchema = z.object({
+  enabled: z.boolean(),
+  spacingMm: z.union([z.literal(910), z.literal(455)]),
+  color: z.string().min(1),
+});
+
 export const ProjectSchema = z.object({
   meta: ProjectMetaSchema,
   drawing: ProjectDrawingSchema.nullable(),
   symbols: z.array(ProjectSymbolSchema),
+  grid: ProjectGridConfigSchema.optional(),
 });
 
 export type ProjectSchemaInput = z.input<typeof ProjectSchema>;

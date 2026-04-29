@@ -10,6 +10,7 @@ import { generateId } from '../utils/id';
 import { APP_VERSION, SCHEMA_VERSION } from '../shared/constants/app';
 import type { Rotation } from '../pdf/pdf-loader';
 import type { Project, ProjectDrawing, ProjectSymbol } from './types';
+import { DEFAULT_GRID_CONFIG } from './types';
 
 /** 操作モード。配置モード時は symbolType を保持する。 */
 export type EditorMode =
@@ -66,6 +67,9 @@ export interface ProjectActions {
   // M3: モード切替
   enterPlaceMode: (symbolType: string) => void;
   exitMode: () => void;
+  // Phase 2-A2: グリッド
+  toggleGrid: () => void;
+  setGridSpacing: (spacing: 910 | 455) => void;
 }
 
 function createEmptyProject(): Project {
@@ -238,4 +242,30 @@ export const useProjectStore = create<ProjectState & ProjectActions>()((set, get
     }),
 
   exitMode: () => set({ mode: { kind: 'select' } }),
+
+  toggleGrid: () => {
+    const current = get().project;
+    const grid = current.grid ?? DEFAULT_GRID_CONFIG;
+    set({
+      project: {
+        ...current,
+        grid: { ...grid, enabled: !grid.enabled },
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  setGridSpacing: (spacing) => {
+    const current = get().project;
+    const grid = current.grid ?? DEFAULT_GRID_CONFIG;
+    set({
+      project: {
+        ...current,
+        grid: { ...grid, spacingMm: spacing },
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
 }));

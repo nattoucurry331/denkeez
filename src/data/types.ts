@@ -35,9 +35,26 @@ export interface ProjectSymbol {
   properties: Record<string, unknown>;
 }
 
+/** Phase 2-A2: グリッド表示設定 (Project に永続化) */
+export interface ProjectGridConfig {
+  enabled: boolean;
+  /** グリッド間隔 (mm)。和室基準で 910 / 455 を切替 */
+  spacingMm: 910 | 455;
+  /** 線色 (HEX) */
+  color: string;
+}
+
+export const DEFAULT_GRID_CONFIG: ProjectGridConfig = {
+  enabled: false,
+  spacingMm: 910,
+  color: '#cccccc',
+};
+
 export interface Project {
   meta: ProjectMeta;
   /** PDF 未読込時は null */
   drawing: ProjectDrawing | null;
   symbols: ProjectSymbol[];
+  /** Phase 2-A2 で追加。後方互換のため optional (未指定なら DEFAULT_GRID_CONFIG) */
+  grid?: ProjectGridConfig;
 }
