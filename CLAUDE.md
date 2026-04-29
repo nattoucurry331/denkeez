@@ -72,7 +72,17 @@
 | データ保存 | SQLite または JSON ファイル |
 | 状態管理 | Zustand or Redux Toolkit |
 
-仮置きの選定を確定する前に、Daisuke と協議してください。既存の見積管理アプリのスタックに合わせる方針です。
+仮置きの選定は Phase 1 PoC で確定済み:
+- アプリ形態 → **Tauri 2** (期間より最適性・セキュリティ重視で独立選定)
+- 状態管理 → **Zustand 5 (plain Zustand v5、immer 不採用)**
+- 描画エンジン → **Konva.js**
+- PDF 表示 → **PDF.js**
+- データ保存 → **JSON (.dkz、Phase 2 で ZIP 化予定)**
+- PDF 出力 → **jsPDF (vector 直接描画)**
+
+詳細は `docs/phase1-completion.md` および `docs/architecture.md` を参照。
+
+なお Phase 1 着手時点では「既存の見積管理アプリのスタックに合わせる」案も検討したが、見積管理アプリの実装(Electron + Zustand + sql.js + PDFKit)は要件定義書とも乖離しており、Denkeez は独自の最適選定を行った。見積管理アプリとの連携は Phase 3 機能 F-21 で I/F 仕様を確定する。
 
 ## コーディング規約
 
@@ -205,7 +215,7 @@ denkeez/
 1. **`REQUIREMENTS.md` に明記されている** → それに従う
 2. **`REQUIREMENTS.md` §9.3 の仕様未確定事項に該当** → Daisuke に確認
 3. **要件定義書に書いていない** → 「職人さんの作業を楽にするか」を基準に推奨案を提示してから着手
-4. **技術選定で迷う** → 既存見積管理アプリとの整合性を最優先
+4. **技術選定で迷う** → Phase 1 PoC で確定した技術スタック(`docs/phase1-completion.md` §「確定した技術スタック」)に従う。それ以外は npm/Cargo の §1.4 ライブラリ導入チェック(直近 1 年以内の更新・実在確認・ライセンス)を満たすことを優先。Phase 3 で見積管理アプリとの連携 I/F を確定する際に、整合性を再評価する
 
 ## このファイルの更新
 
