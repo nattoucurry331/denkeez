@@ -13,6 +13,7 @@ import {
   readProjectFile,
   writeProjectFile,
   writeBinaryFile,
+  askConfirm,
   basename,
   ptToMm,
 } from '../../tauri/api';
@@ -50,17 +51,17 @@ export function MenuBar(): JSX.Element {
     }
   };
 
-  const handleNew = (): void => {
-    if (
-      dirty &&
-      !window.confirm('未保存の変更があります。新規プロジェクトを開始すると失われます。続行しますか?')
-    ) {
-      return;
-    }
-    newProject();
-    setError(null);
-    setInfo(null);
-  };
+  const handleNew = (): Promise<void> =>
+    wrap(async () => {
+      if (dirty) {
+        const ok = await askConfirm(
+          '未保存の変更があります。新規プロジェクトを開始すると失われます。続行しますか?',
+          '新規プロジェクト',
+        );
+        if (!ok) return;
+      }
+      newProject();
+    });
 
   const handleOpenPdf = (): Promise<void> =>
     wrap(async () => {
@@ -82,11 +83,12 @@ export function MenuBar(): JSX.Element {
 
   const handleOpenProject = (): Promise<void> =>
     wrap(async () => {
-      if (
-        dirty &&
-        !window.confirm('未保存の変更があります。別ファイルを開くと失われます。続行しますか?')
-      ) {
-        return;
+      if (dirty) {
+        const ok = await askConfirm(
+          '未保存の変更があります。別ファイルを開くと失われます。続行しますか?',
+          'プロジェクトを開く',
+        );
+        if (!ok) return;
       }
       const path = await selectProjectFileToOpen();
       if (!path) return;
@@ -133,13 +135,12 @@ export function MenuBar(): JSX.Element {
         throw new Error('先に「ファイル → PDF を開く」で図面を読み込んでください');
       }
       const symbolCount = project.symbols.length;
-      if (
-        symbolCount > 0 &&
-        !window.confirm(
+      if (symbolCount > 0) {
+        const ok = await askConfirm(
           `配置済みシンボル ${symbolCount} 個 は座標系が変わるため削除されます。続行しますか?`,
-        )
-      ) {
-        return;
+          'PDF 90° 回転',
+        );
+        if (!ok) return;
       }
       const next = ((pdfRotation + 90) % 360) as Rotation;
       const rendered = await renderPdfPage(pdfBuffer, project.drawing.selectedPage, 2.0, next);

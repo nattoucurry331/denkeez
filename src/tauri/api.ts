@@ -2,9 +2,18 @@
 // REQUIREMENTS.md §11.4 / Plan §3: capabilities で許可された範囲のみ呼び出せる。
 // CSP / permissions は src-tauri/capabilities/default.json を参照。
 
-import { open, save } from '@tauri-apps/plugin-dialog';
+import { ask, open, save } from '@tauri-apps/plugin-dialog';
 import { readFile, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { APP_FILE_EXTENSION } from '../shared/constants/app';
+
+/**
+ * Tauri ネイティブの確認ダイアログ。
+ * window.confirm は Tauri 2 の WebView では無効化されているため、
+ * dialog プラグインの ask を使う。OK/キャンセルの真偽値を返す。
+ */
+export async function askConfirm(message: string, title = 'Denkeez'): Promise<boolean> {
+  return await ask(message, { title, kind: 'warning' });
+}
 
 /** PDF ファイル選択ダイアログを表示 (取込み用)。キャンセル時は null を返す。 */
 export async function selectPdfFile(): Promise<string | null> {
