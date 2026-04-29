@@ -1,12 +1,19 @@
 // 図面キャンバス (Plan §3 / REQUIREMENTS.md §6.1)。
 // PDF を背景レイヤーに、シンボルを上位レイヤーに描画する。
-// ステージ上のクリック・キーボード操作を一手にハンドリングする。
+// Phase 2-A1: ビューポートのズーム / パン (Stage の scale + offset、ViewportControls 経由)。
+// Phase 2-A2: GridLayer 統合 + cursorMm 発信 (StatusBar 表示用)。
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
+import type Konva from 'konva';
 import { useProjectStore } from '../../data/project-store';
+import { useViewportStore } from '../../data/viewport-store';
+import { useViewportControls } from '../../canvas/viewport-controls';
 import { SymbolsLayer } from '../../canvas/symbols-layer';
+import { GridLayer } from '../../canvas/grid-layer';
+import { Minimap } from '../../canvas/minimap';
+import { useKeyboardShortcuts } from '../../hooks/use-keyboard-shortcuts';
 import { pxToMm } from '../../utils/coordinate';
 
 export function CanvasArea(): JSX.Element {
@@ -20,7 +27,50 @@ export function CanvasArea(): JSX.Element {
   const exitMode = useProjectStore((s) => s.exitMode);
   const clearSelection = useProjectStore((s) => s.clearSelection);
 
-  // キーボードショートカット (CLAUDE.md L197 Windows 標準準拠)
+  const scale = useViewportStore((s) => s.scale);
+  const offsetX = useViewportStore((s) => s.offsetX);
+  const offsetY = useViewportStore((s) => s.offsetY);
+  const spaceDown = useViewportStore((s) => s.spaceDown);
+  const fitToWindow = useViewportStore((s) => s.fitToWindow);
+  const setCursorMm = useViewportStore((s) => s.setCursorMm);
+
+  const viewportControls = useViewportControls();
+  const stageRef = useRef<Konva.Stage | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [containerSize, setContainerSize] = useState({ w: 800, h: 600 });
+
+  // drawing が設定されてから containerRef が ref を取れるので、
+  // depends に drawing を入れて PDF 読込後に effect が走るようにする
+  useEffect(() => {
+    if (!drawing) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      setContainerSize({ w: el.clientWidth, h: el.clientHeight });
+    });
+    ro.observe(el);
+    setContainerSize({ w: el.clientWidth, h: el.clientHeight });
+    return () => ro.disconnect();
+  }, [drawing]);
+
+  // PDF 読込ごとに 1 回だけ fitToWindow を呼ぶ (canvas reference の変化で判定)。
+  // containerSize が初期値 0 のときは確定するまで待つ。
+  // ウィンドウリサイズの度には fit しない (ユーザーのズーム位置を維持)。
+  const fittedCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    if (!canvas) {
+      fittedCanvasRef.current = null;
+      return;
+    }
+    if (containerSize.w === 0 || containerSize.h === 0) return;
+    if (fittedCanvasRef.current === canvas) return;
+    fitToWindow(
+      { w: canvas.width, h: canvas.height },
+      { w: containerSize.w, h: containerSize.h },
+    );
+    fittedCanvasRef.current = canvas;
+  }, [canvas, fitToWindow, containerSize.w, containerSize.h]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -37,7 +87,14 @@ export function CanvasArea(): JSX.Element {
     return () => window.removeEventListener('keydown', handler);
   }, [mode.kind, selectedIds, exitMode, clearSelection, removeSymbols]);
 
-  // 新規プロジェクトで PDF も未取込の場合
+  // グローバル KB ショートカット (Ctrl+Z/Y/+/-/0/G) — Phase 2-A4
+  useKeyboardShortcuts({
+    getViewportCenter: () =>
+      containerSize.w > 0 && containerSize.h > 0
+        ? { x: containerSize.w / 2, y: containerSize.h / 2 }
+        : null,
+  });
+
   if (!drawing) {
     return (
       <div style={emptyStyle}>
@@ -59,8 +116,6 @@ export function CanvasArea(): JSX.Element {
     </p>
   );
 
-  // プロジェクトを開いた直後 (drawing は復元、canvas はまだ null)
-  // PoC 仕様: .dkz には PDF 本体を同梱しないため、再選択が必要
   if (!canvas) {
     return (
       <div style={containerStyle}>
@@ -71,50 +126,91 @@ export function CanvasArea(): JSX.Element {
             「ファイル → PDF を開く」で <code>{drawing.filename}</code> (または同等の PDF) を再選択してください。
           </p>
           <p style={mutedStyle}>
-            (Phase 1 PoC では .dkz に PDF を同梱していません。Phase 2 で .dkz=ZIP 化時に同梱予定)
+            (Phase 1 PoC では .dkz に PDF を同梱していません。Phase 2-E で .dkz=ZIP 化時に同梱予定)
           </p>
         </div>
       </div>
     );
   }
 
-  // 1mm あたりのスクリーンピクセル数 (REQUIREMENTS.md §9.1.1: utils/coordinate に集約)
   const pxPerMm = canvas.width / drawing.widthMm;
+  const scaleObj = { pxPerMm };
+
+  const handleStageMouseDown = (e: KonvaEventObject<MouseEvent>) => {
+    viewportControls.onMouseDown(e);
+  };
+
+  const handleStageMouseMove = (e: KonvaEventObject<MouseEvent>) => {
+    viewportControls.onMouseMove(e);
+    const stage = e.target.getStage();
+    if (!stage) return;
+    const point = stage.getRelativePointerPosition();
+    if (!point) {
+      setCursorMm(null);
+      return;
+    }
+    setCursorMm({
+      x: pxToMm(point.x, scaleObj),
+      y: pxToMm(point.y, scaleObj),
+    });
+  };
+
+  const handleStageMouseLeave = () => {
+    setCursorMm(null);
+    viewportControls.onMouseUp({} as KonvaEventObject<MouseEvent>);
+  };
 
   const handleStageClick = (e: KonvaEventObject<MouseEvent>) => {
+    if (spaceDown) return;
     const stage = e.target.getStage();
-    if (!stage) {
-      return;
-    }
-    const point = stage.getPointerPosition();
-    if (!point) {
-      return;
-    }
+    if (!stage) return;
+    const point = stage.getRelativePointerPosition();
+    if (!point) return;
     if (mode.kind === 'place') {
       addSymbol(mode.symbolType as 'downlight', {
-        x: pxToMm(point.x, { pxPerMm }),
-        y: pxToMm(point.y, { pxPerMm }),
+        x: pxToMm(point.x, scaleObj),
+        y: pxToMm(point.y, scaleObj),
       });
     } else if (e.target === stage) {
-      // 何もないところをクリック → 選択解除
       clearSelection();
     }
   };
 
+  const cursor =
+    spaceDown
+      ? viewportControls.isPanning()
+        ? 'grabbing'
+        : 'grab'
+      : mode.kind === 'place'
+        ? 'crosshair'
+        : 'default';
+
   return (
     <div style={containerStyle}>
       {infoLine}
-      <div style={stageContainerStyle}>
+      <div ref={containerRef} style={stageContainerStyle}>
+        <Minimap containerSize={containerSize} />
         <Stage
-          width={canvas.width}
-          height={canvas.height}
+          ref={stageRef}
+          width={containerSize.w}
+          height={containerSize.h}
+          scaleX={scale}
+          scaleY={scale}
+          x={offsetX}
+          y={offsetY}
+          onWheel={viewportControls.onWheel}
+          onMouseDown={handleStageMouseDown}
+          onMouseMove={handleStageMouseMove}
+          onMouseUp={viewportControls.onMouseUp}
+          onMouseLeave={handleStageMouseLeave}
           onClick={handleStageClick}
           onTap={handleStageClick}
-          style={{ cursor: mode.kind === 'place' ? 'crosshair' : 'default' }}
+          style={{ cursor }}
         >
           <Layer listening={false}>
             <KonvaImage image={canvas} />
           </Layer>
+          <GridLayer pxPerMm={pxPerMm} canvasWidth={canvas.width} canvasHeight={canvas.height} />
           <SymbolsLayer pxPerMm={pxPerMm} />
         </Stage>
       </div>
@@ -158,7 +254,9 @@ const modeBadgeStyle: React.CSSProperties = {
 const stageContainerStyle: React.CSSProperties = {
   flex: 1,
   border: '1px solid #ccc',
-  overflow: 'auto',
+  overflow: 'hidden',
+  background: '#f8f8f8',
+  position: 'relative', // Minimap を絶対配置するため
 };
 const warnBoxStyle: React.CSSProperties = {
   padding: '16px 20px',

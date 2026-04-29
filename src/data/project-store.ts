@@ -6,10 +6,13 @@
 // 被せれば実装可能 (state 全体スナップショットを履歴に積む方式)。
 
 import { create } from 'zustand';
+import { temporal } from 'zundo';
 import { generateId } from '../utils/id';
 import { APP_VERSION, SCHEMA_VERSION } from '../shared/constants/app';
+import { debounce } from '../utils/debounce';
 import type { Rotation } from '../pdf/pdf-loader';
 import type { Project, ProjectDrawing, ProjectSymbol } from './types';
+import { DEFAULT_GRID_CONFIG } from './types';
 
 /** 操作モード。配置モード時は symbolType を保持する。 */
 export type EditorMode =
@@ -66,6 +69,9 @@ export interface ProjectActions {
   // M3: モード切替
   enterPlaceMode: (symbolType: string) => void;
   exitMode: () => void;
+  // Phase 2-A2: グリッド
+  toggleGrid: () => void;
+  setGridSpacing: (spacing: 100 | 50) => void;
 }
 
 function createEmptyProject(): Project {
@@ -88,7 +94,12 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-export const useProjectStore = create<ProjectState & ProjectActions>()((set, get) => ({
+// Phase 2-A4: zundo (temporal middleware) でアンドゥ・リドゥを実装。
+// partialize: project のみ履歴に含める (UI state や DOM = pdfCanvas/pdfBuffer/mode/selectedIds は除外)
+// limit: 50 件まで
+// handleSet: 連続更新 (ドラッグ中の updateSymbolPosition 60件/秒) を 100ms debounce で 1 件に間引く
+export const useProjectStore = create<ProjectState & ProjectActions>()(
+  temporal((set, get) => ({
   project: createEmptyProject(),
   dirty: false,
   pdfCanvas: null,
@@ -238,4 +249,36 @@ export const useProjectStore = create<ProjectState & ProjectActions>()((set, get
     }),
 
   exitMode: () => set({ mode: { kind: 'select' } }),
-}));
+
+  toggleGrid: () => {
+    const current = get().project;
+    const grid = current.grid ?? DEFAULT_GRID_CONFIG;
+    set({
+      project: {
+        ...current,
+        grid: { ...grid, enabled: !grid.enabled },
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  setGridSpacing: (spacing) => {
+    const current = get().project;
+    const grid = current.grid ?? DEFAULT_GRID_CONFIG;
+    set({
+      project: {
+        ...current,
+        grid: { ...grid, spacingMm: spacing },
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+  }),
+  {
+    partialize: (state) => ({ project: state.project }),
+    limit: 50,
+    handleSet: (handleSet) => debounce(handleSet, 100),
+  }),
+);

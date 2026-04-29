@@ -3,6 +3,7 @@ import { MenuBar } from './components/menu-bar/MenuBar';
 import { CanvasArea } from './components/canvas-area/CanvasArea';
 import { SymbolPalette } from './components/symbol-palette/SymbolPalette';
 import { UnsavedChangesDialog } from './components/dialogs/UnsavedChangesDialog';
+import { StatusBar } from './components/status-bar/StatusBar';
 import {
   registerCloseConfirmHandler,
   setupCloseHandler,
@@ -49,6 +50,7 @@ export function App(): JSX.Element {
         <SymbolPalette />
         <CanvasArea />
       </div>
+      <StatusBar />
       <UnsavedChangesDialog
         open={confirmOpen}
         onSave={() => decide('save')}

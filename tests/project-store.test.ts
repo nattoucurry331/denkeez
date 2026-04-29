@@ -2,6 +2,12 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { useProjectStore } from '../src/data/project-store';
 import { isDirty } from '../src/data/dirty-tracker';
 
+// zundo の undo/redo は handleSet で 100ms debounce している。
+// テストでは debounce を待つ helper を用意する。
+function flushDebounce(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 150));
+}
+
 // Plan §5 R-11: dirty フラグ管理の漏れを単体テストで網羅する。
 // すべての mutation で dirty=true 化されるかを検証。
 
@@ -141,6 +147,48 @@ describe('project-store symbol CRUD', () => {
       store.toggleSelectSymbol('b');
       store.clearSelection();
       expect(isDirty()).toBe(false);
+    });
+  });
+
+  describe('zundo undo / redo (Phase 2-A4)', () => {
+    beforeEach(() => {
+      useProjectStore.temporal.getState().clear();
+    });
+
+    it('addSymbol → undo で symbols が空に戻る', async () => {
+      useProjectStore.getState().addSymbol('downlight', { x: 100, y: 200 });
+      await flushDebounce();
+      expect(useProjectStore.getState().project.symbols).toHaveLength(1);
+      useProjectStore.temporal.getState().undo();
+      expect(useProjectStore.getState().project.symbols).toHaveLength(0);
+    });
+
+    it('undo → redo で symbols が復元される', async () => {
+      useProjectStore.getState().addSymbol('downlight', { x: 50, y: 75 });
+      await flushDebounce();
+      const before = useProjectStore.getState().project.symbols;
+      useProjectStore.temporal.getState().undo();
+      expect(useProjectStore.getState().project.symbols).toHaveLength(0);
+      useProjectStore.temporal.getState().redo();
+      expect(useProjectStore.getState().project.symbols).toEqual(before);
+    });
+
+    it('partialize: pdfCanvas や mode は履歴に含まれない (undo で巻き戻らない)', async () => {
+      const dummyCanvas = { width: 100, height: 100 } as unknown as HTMLCanvasElement;
+      useProjectStore.getState().loadPdf(
+        'test.pdf',
+        { selectedPage: 1, widthMm: 297, heightMm: 420 },
+        dummyCanvas,
+        new ArrayBuffer(0),
+      );
+      useProjectStore.getState().enterPlaceMode('downlight');
+      useProjectStore.getState().addSymbol('downlight', { x: 0, y: 0 });
+      await flushDebounce();
+      // undo してもモードや pdfCanvas は維持される (project.symbols のみ巻き戻る)
+      useProjectStore.temporal.getState().undo();
+      expect(useProjectStore.getState().project.symbols).toHaveLength(0);
+      expect(useProjectStore.getState().pdfCanvas).toBe(dummyCanvas);
+      expect(useProjectStore.getState().mode.kind).toBe('place');
     });
   });
 
