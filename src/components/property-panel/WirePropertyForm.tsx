@@ -1,9 +1,11 @@
 // 配線 (Wire) 用のプロパティ編集フォーム (Phase 2-C3 / REQUIREMENTS.md F-10)。
-// 種別 / ケーブル / 回路番号 / 配線長 を表示・編集する。
+// 種別 / ケーブル / 回路番号 / 配線長 / 所属レイヤー を表示・編集する。
+// Phase 2-D2: RightPanel タブ内に格納されるためパネル外周スタイルを持たない。
 
 import { useProjectStore } from '../../data/project-store';
 import { WIRE_TYPE_OPTIONS, CABLE_TYPE_OPTIONS } from '../../data/types';
 import type { Wire, WireType, CableType } from '../../data/types';
+import { LayerSelector } from './LayerSelector';
 
 interface Props {
   wire: Wire;
@@ -13,7 +15,7 @@ export function WirePropertyForm({ wire }: Props): JSX.Element {
   const updateWire = useProjectStore((s) => s.updateWire);
 
   return (
-    <aside style={panelStyle}>
+    <div style={containerStyle}>
       <h2 style={headingStyle}>配線プロパティ</h2>
       <div style={typeBoxStyle}>
         <span style={typeLabelStyle}>配線</span>
@@ -21,6 +23,8 @@ export function WirePropertyForm({ wire }: Props): JSX.Element {
           {WIRE_TYPE_OPTIONS.find((o) => o.value === wire.type)?.label ?? wire.type}
         </span>
       </div>
+
+      <LayerSelector kind="wire" currentLayerId={wire.layerId} entityId={wire.id} />
 
       <div style={fieldStyle}>
         <label style={labelStyle} htmlFor="wire-type">配線種別</label>
@@ -88,17 +92,13 @@ export function WirePropertyForm({ wire }: Props): JSX.Element {
       <p style={mutedStyle}>
         中継点 {wire.waypoints.length} 個 / 端点 2 個
       </p>
-    </aside>
+    </div>
   );
 }
 
-const panelStyle: React.CSSProperties = {
-  width: 240,
-  borderLeft: '1px solid #ccc',
+const containerStyle: React.CSSProperties = {
   padding: '12px 12px',
-  background: '#fafafa',
   overflowY: 'auto',
-  flexShrink: 0,
   display: 'flex',
   flexDirection: 'column',
 };

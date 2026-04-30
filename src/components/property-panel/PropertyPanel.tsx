@@ -1,6 +1,8 @@
 // プロパティパネル (Phase 2-B2 / REQUIREMENTS.md F-10)。
 // 単一選択時に種別固有のフィールドを表示し、編集を store に反映する。
 // Phase 2-B では複数選択編集は未対応 (R-B9)。
+// Phase 2-D2: RightPanel タブ内に格納されるためパネル外周スタイルを持たない。
+//             所属レイヤー切替 UI を追加 (F-08)。
 
 import { useProjectStore } from '../../data/project-store';
 import { getSymbolDefinition } from '../../symbols/symbol-registry';
@@ -8,6 +10,7 @@ import { getPropertySchema } from '../../symbols/property-schemas';
 import { PropertyField } from './PropertyField';
 import { EmptyPropertyPanel } from './EmptyPropertyPanel';
 import { WirePropertyForm } from './WirePropertyForm';
+import { LayerSelector } from './LayerSelector';
 import type { PropertyValue } from '../../data/types';
 
 export function PropertyPanel(): JSX.Element {
@@ -39,7 +42,6 @@ export function PropertyPanel(): JSX.Element {
     return <EmptyPropertyPanel message="未選択" />;
   }
 
-  // Phase 2-C3: Wire の場合は WirePropertyForm へ
   const wire = wires.find((w) => w.id === selectedId);
   if (wire) {
     return <WirePropertyForm wire={wire} />;
@@ -58,13 +60,15 @@ export function PropertyPanel(): JSX.Element {
   };
 
   return (
-    <aside style={panelStyle}>
+    <div style={containerStyle}>
       <h2 style={headingStyle}>プロパティ</h2>
       <div style={typeBoxStyle}>
         <span style={typeLabelStyle}>種別</span>
         <span style={typeNameStyle}>{definition?.name ?? symbol.type}</span>
       </div>
       <p style={mutedStyle}>位置: {symbol.position.x.toFixed(0)}, {symbol.position.y.toFixed(0)} mm</p>
+      <hr style={hrStyle} />
+      <LayerSelector kind="symbol" currentLayerId={symbol.layerId} entityId={symbol.id} />
       <hr style={hrStyle} />
       {schema.length === 0 ? (
         <p style={mutedStyle}>このシンボルには編集可能なプロパティがありません。</p>
@@ -78,17 +82,13 @@ export function PropertyPanel(): JSX.Element {
           />
         ))
       )}
-    </aside>
+    </div>
   );
 }
 
-const panelStyle: React.CSSProperties = {
-  width: 240,
-  borderLeft: '1px solid #ccc',
+const containerStyle: React.CSSProperties = {
   padding: '12px 12px',
-  background: '#fafafa',
   overflowY: 'auto',
-  flexShrink: 0,
   display: 'flex',
   flexDirection: 'column',
 };

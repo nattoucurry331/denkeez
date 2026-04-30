@@ -21,6 +21,7 @@ interface Props {
 
 export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
   const symbols = useProjectStore((s) => s.project.symbols);
+  const layers = useProjectStore((s) => s.project.layers);
   const selectedIds = useProjectStore((s) => s.selectedIds);
   const updateSymbolPosition = useProjectStore((s) => s.updateSymbolPosition);
   const updateSymbolRotation = useProjectStore((s) => s.updateSymbolRotation);
@@ -29,6 +30,9 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
 
   const scale: Scale = { pxPerMm };
   const selectedSet = new Set(selectedIds);
+  // Phase 2-D2: 非表示レイヤーに所属する symbol は描画しない (F-08)
+  const hiddenLayerIds = new Set(layers.filter((l) => !l.visible).map((l) => l.id));
+  const visibleSymbols = symbols.filter((s) => !hiddenLayerIds.has(s.layerId));
 
   const transformerRef = useRef<Konva.Transformer>(null);
   const layerRef = useRef<Konva.Layer>(null);
@@ -51,11 +55,11 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
       tr.nodes([]);
     }
     layer.batchDraw();
-  }, [selectedIds, symbols]);
+  }, [selectedIds, symbols, visibleSymbols.length]);
 
   return (
     <Layer ref={layerRef}>
-      {symbols.map((sym) => (
+      {visibleSymbols.map((sym) => (
         <SymbolNode
           key={sym.id}
           symbol={sym}

@@ -35,16 +35,28 @@ function styleFor(type: WireType): WireStyle {
 export function WireLayer({ pxPerMm }: Props): JSX.Element {
   const wires = useProjectStore((s) => s.project.wires) ?? [];
   const symbols = useProjectStore((s) => s.project.symbols);
+  const layers = useProjectStore((s) => s.project.layers);
   const selectedIds = useProjectStore((s) => s.selectedIds);
   const selectSymbols = useProjectStore((s) => s.selectSymbols);
   const toggleSelectSymbol = useProjectStore((s) => s.toggleSelectSymbol);
 
   const scale: Scale = { pxPerMm };
   const selectedSet = new Set(selectedIds);
+  // Phase 2-D2: 非表示レイヤーに所属する wire、または端点シンボルが非表示レイヤーの場合は描画しない (F-08)
+  const hiddenLayerIds = new Set(layers.filter((l) => !l.visible).map((l) => l.id));
+  const symbolLayer = new Map(symbols.map((s) => [s.id, s.layerId]));
+  const visibleWires = wires.filter((w) => {
+    if (hiddenLayerIds.has(w.layerId)) return false;
+    const fromLayer = symbolLayer.get(w.fromSymbolId);
+    const toLayer = symbolLayer.get(w.toSymbolId);
+    if (fromLayer !== undefined && hiddenLayerIds.has(fromLayer)) return false;
+    if (toLayer !== undefined && hiddenLayerIds.has(toLayer)) return false;
+    return true;
+  });
 
   return (
     <Layer>
-      {wires.map((wire) => {
+      {visibleWires.map((wire) => {
         const points = getWirePoints(wire, symbols);
         if (!points || points.length < 2) return null;
         const flat = points.flatMap((p) => [mmToPx(p.x, scale), mmToPx(p.y, scale)]);

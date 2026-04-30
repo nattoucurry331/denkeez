@@ -1,4 +1,5 @@
 // 未選択時 / 複数選択時の PropertyPanel プレースホルダ (Phase 2-B2)。
+// Phase 2-D2: RightPanel タブ内に格納されるため、パネル外周のスタイルは持たない。
 
 interface Props {
   message: string;
@@ -7,21 +8,17 @@ interface Props {
 
 export function EmptyPropertyPanel({ message, hint }: Props): JSX.Element {
   return (
-    <aside style={panelStyle}>
+    <div style={containerStyle}>
       <h2 style={headingStyle}>プロパティ</h2>
       <p style={messageStyle}>{message}</p>
       {hint && <p style={hintStyle}>{hint}</p>}
-    </aside>
+    </div>
   );
 }
 
-const panelStyle: React.CSSProperties = {
-  width: 240,
-  borderLeft: '1px solid #ccc',
+const containerStyle: React.CSSProperties = {
   padding: '12px 12px',
-  background: '#fafafa',
   overflowY: 'auto',
-  flexShrink: 0,
   display: 'flex',
   flexDirection: 'column',
 };
