@@ -1,9 +1,11 @@
-// 右側パネルのタブ切替コンテナ (Phase 2-D2 / Q4 仕様)。
-// レイヤー / プロパティ の 2 タブを提供し、縦解像度を圧迫しないよう排他表示にする。
+// 右側パネルのコンテナ (Phase 2-D2 / Phase 2-E1)。
+// 上部: レイヤー / プロパティ の 2 タブ排他切替 (Q4 仕様)。
+// 下部: 拾い出しパネル — 折りたたみ可能で常時サマリ表示 (REQUIREMENTS §3.2 F-09 / §6.1)。
 
 import { useState } from 'react';
 import { LayerPanel } from '../layer-panel/LayerPanel';
 import { PropertyPanel } from '../property-panel/PropertyPanel';
+import { BomPanel } from '../bom-panel/BomPanel';
 
 type Tab = 'layers' | 'properties';
 
@@ -35,6 +37,7 @@ export function RightPanel(): JSX.Element {
       <div style={contentStyle}>
         {tab === 'layers' ? <LayerPanel /> : <PropertyPanel />}
       </div>
+      <BomPanel />
     </aside>
   );
 }
@@ -74,4 +77,5 @@ const contentStyle: React.CSSProperties = {
   overflow: 'hidden',
   display: 'flex',
   flexDirection: 'column',
+  minHeight: 0,
 };
