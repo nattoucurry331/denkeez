@@ -17,10 +17,17 @@ import { lockedLayerIds, sortSymbolsByLayerOrder, getLayerColor } from '../data/
 import type { ProjectSymbol } from '../data/types';
 
 interface Props {
+  /** 位置 (実寸 mm or 紙面 mm) を canvas px に変換するスケール */
   pxPerMm: number;
+  /**
+   * シンボル形状サイズ (radiusMm 等) を canvas px に変換するスケール。
+   * 校正の有無に関わらず常に「紙面 mm → canvas px」(canvas.width / drawing.widthMm)。
+   * JIS C 0303 の慣例で、記号は縮尺に関わらず一定の見やすい大きさで描くため。
+   */
+  paperPxPerMm: number;
 }
 
-export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
+export function SymbolsLayer({ pxPerMm, paperPxPerMm }: Props): JSX.Element {
   const symbols = useProjectStore((s) => s.project.symbols);
   const layers = useProjectStore((s) => s.project.layers);
   const selectedIds = useProjectStore((s) => s.selectedIds);
@@ -31,6 +38,7 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
   const toggleSelectSymbol = useProjectStore((s) => s.toggleSelectSymbol);
 
   const scale: Scale = { pxPerMm };
+  const paperScale: Scale = { pxPerMm: paperPxPerMm };
   const selectedSet = new Set(selectedIds);
   // Phase 2-D2: 非表示レイヤーに所属する symbol は描画しない (F-08)
   const hiddenLayerIds = new Set(layers.filter((l) => !l.visible).map((l) => l.id));
@@ -82,6 +90,7 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
             key={sym.id}
             symbol={sym}
             scale={scale}
+            paperScale={paperScale}
             selected={selectedSet.has(sym.id)}
             locked={isLocked}
             strokeColor={symbolColor}
@@ -122,7 +131,10 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
 
 interface SymbolNodeProps {
   symbol: ProjectSymbol;
+  /** 位置を mm → px に変換 */
   scale: Scale;
+  /** シンボル形状サイズを紙面 mm → px に変換 */
+  paperScale: Scale;
   selected: boolean;
   /** Phase 2-D3: ロック中レイヤー所属。draggable / click を抑止 */
   locked: boolean;
@@ -142,6 +154,7 @@ interface SymbolNodeProps {
 function SymbolNode({
   symbol,
   scale,
+  paperScale,
   selected,
   locked,
   wireModeActive,
@@ -154,9 +167,11 @@ function SymbolNode({
   if (!def) {
     return null;
   }
+  // 位置は実寸 mm 系 (校正済みなら実寸、未校正なら紙面)
   const x = mmToPx(symbol.position.x, scale);
   const y = mmToPx(symbol.position.y, scale);
-  const bbox = getShapeBoundingBox(def.shape, scale);
+  // 形状サイズは常に紙面 mm 系 (記号は縮尺に依存せず一定の見やすさを保つ)
+  const bbox = getShapeBoundingBox(def.shape, paperScale);
 
   const handleClick = (e: KonvaEventObject<MouseEvent>) => {
     if (wireModeActive) {
@@ -194,7 +209,7 @@ function SymbolNode({
         onTransformEnd(rot);
       }}
     >
-      <SymbolShapeRenderer shape={def.shape} scale={scale} strokeColor={strokeColor} />
+      <SymbolShapeRenderer shape={def.shape} scale={paperScale} strokeColor={strokeColor} />
       {selected && (
         <Rect
           x={-bbox.width / 2 - 3}

@@ -88,12 +88,19 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
     compress: true,
   });
 
-  // 描画原点 (offsetX, offsetY) と倍率 (scale) を全描画に適用するヘルパ
-  const tx = (mmX: number): number => mmX * layout.scale + layout.offsetX;
-  const ty = (mmY: number): number => mmY * layout.scale + layout.offsetY;
-  const ts = (mm: number): number => mm * layout.scale;
+  // Phase 2-E5: シンボル/配線の position は実寸 mm 系 (校正後)。PDF ページは紙面 mm 系。
+  // 校正済みなら paperPerReal で実寸 mm → 紙面 mm 変換が必要、未校正なら 1.0 (恒等)。
+  const paperPerReal = computePaperPerRealRatio(drawing, backgroundCanvas.width);
 
-  // 背景 (PNG dataURL を PDF に貼付) — 元図面レイヤーが対象に含まれている場合のみ
+  // 描画原点 (offsetX, offsetY) と倍率 (layout.scale) を適用するヘルパ。
+  //   - tx / ty: 実寸 mm の position → PDF 上の最終 mm 座標
+  //   - ts:      紙面 mm のサイズ (radiusMm 等) → PDF 上の最終 mm サイズ
+  const tx = (realMm: number): number => realMm * paperPerReal * layout.scale + layout.offsetX;
+  const ty = (realMm: number): number => realMm * paperPerReal * layout.scale + layout.offsetY;
+  const ts = (paperMm: number): number => paperMm * layout.scale;
+
+  // 背景 (PNG dataURL を PDF に貼付) — 元図面レイヤーが対象に含まれている場合のみ。
+  // 背景画像のサイズは drawing.widthMm/heightMm (= 紙面 mm) なので ts で OK。
   if (allowedLayers.has(BACKGROUND_LAYER_ID)) {
     const backgroundDataUrl = backgroundCanvas.toDataURL('image/png');
     pdf.addImage(
@@ -101,8 +108,8 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
       'PNG',
       layout.offsetX,
       layout.offsetY,
-      drawing.widthMm * layout.scale,
-      drawing.heightMm * layout.scale,
+      ts(drawing.widthMm),
+      ts(drawing.heightMm),
       undefined,
       'FAST',
     );
@@ -127,6 +134,35 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
 
   const buffer = pdf.output('arraybuffer');
   return new Uint8Array(buffer);
+}
+
+/**
+ * Phase 2-E5: 「実寸 mm」→「紙面 mm」の換算比を求める。
+ *
+ *  - drawing.scale (校正済み) があれば: 校正値から factor を計算
+ *  - 未校正の場合: 1.0 (= 紙面 mm 系のまま、変換なし)
+ *
+ *  導出:
+ *    paperPxPerMm = canvasWidth / drawing.widthMm    (canvas 1 paper-mm あたりの px 数)
+ *    pxPerMmReal  = drawing.scale.pixelDistanceCanvas / drawing.scale.realDistanceMm
+ *    任意の px 数 P について:
+ *      P を paper mm に換算: P / paperPxPerMm
+ *      P を real mm に換算:  P / pxPerMmReal
+ *    paper_mm / real_mm = (P/paperPxPerMm) / (P/pxPerMmReal) = pxPerMmReal / paperPxPerMm
+ *
+ *  例: 1/100 縮尺の図面で正しく校正されると factor ≈ 0.01。
+ */
+export function computePaperPerRealRatio(
+  drawing: { widthMm: number; scale?: { pixelDistanceCanvas: number; realDistanceMm: number } | undefined },
+  canvasWidth: number,
+): number {
+  if (!drawing.scale) return 1;
+  if (drawing.scale.realDistanceMm <= 0) return 1;
+  if (drawing.widthMm <= 0 || canvasWidth <= 0) return 1;
+  const paperPxPerMm = canvasWidth / drawing.widthMm;
+  const pxPerMmReal = drawing.scale.pixelDistanceCanvas / drawing.scale.realDistanceMm;
+  if (pxPerMmReal <= 0) return 1;
+  return pxPerMmReal / paperPxPerMm;
 }
 
 /**

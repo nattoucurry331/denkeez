@@ -239,8 +239,12 @@ export function CanvasArea(): JSX.Element {
   }
 
   // Phase 2-C1: scale 設定済みなら校正値ベース、未設定なら紙面ベースで pxPerMm を計算
+  // → 「位置」の mm↔px 変換に使う (校正後は実寸 mm 系)
   const pxPerMm = computePxPerMm(drawing, canvas.width);
   const scaleObj = { pxPerMm };
+  // Phase 2-E5: シンボル形状サイズ・配線太さなど「紙面 mm」前提の値は常に紙面スケールで描画。
+  //   (JIS C 0303 の慣例: 記号は縮尺に関わらず一定の見やすい大きさで描く)
+  const paperPxPerMm = canvas.width / drawing.widthMm;
 
   const isStageBackground = (e: KonvaEventObject<MouseEvent>): boolean => {
     const target = e.target;
@@ -444,7 +448,7 @@ export function CanvasArea(): JSX.Element {
           )}
           <GridLayer pxPerMm={pxPerMm} canvasWidth={canvas.width} canvasHeight={canvas.height} />
           <WireLayer pxPerMm={pxPerMm} />
-          <SymbolsLayer pxPerMm={pxPerMm} />
+          <SymbolsLayer pxPerMm={pxPerMm} paperPxPerMm={paperPxPerMm} />
           <WirePreviewLayer
             pxPerMm={pxPerMm}
             cursorPx={mode.kind === 'wire' ? wireCursorPx ?? undefined : undefined}

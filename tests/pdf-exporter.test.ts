@@ -5,6 +5,7 @@ import {
   filterRenderableEntities,
   getWirePdfStyle,
   computePageLayout,
+  computePaperPerRealRatio,
 } from '../src/export/pdf-exporter';
 import type {
   Layer,
@@ -243,6 +244,47 @@ describe('computePageLayout (Phase 2-E3b)', () => {
     expect(computePageLayout(100, 100, 'A4', 'portrait').pageLongMm).toBe(297);
     expect(computePageLayout(100, 100, 'A1', 'portrait').pageShortMm).toBe(594);
     expect(computePageLayout(100, 100, 'A1', 'portrait').pageLongMm).toBe(841);
+  });
+});
+
+describe('computePaperPerRealRatio (Phase 2-E5)', () => {
+  it('未校正なら 1.0 (恒等)', () => {
+    expect(computePaperPerRealRatio({ widthMm: 297 }, 1684)).toBe(1);
+  });
+
+  it('校正値の realDistanceMm が 0 以下なら 1.0', () => {
+    expect(
+      computePaperPerRealRatio(
+        { widthMm: 297, scale: { pixelDistanceCanvas: 100, realDistanceMm: 0 } },
+        1684,
+      ),
+    ).toBe(1);
+  });
+
+  it('1/100 縮尺の校正で約 0.0095 (paper_mm / real_mm)', () => {
+    // A3 (297mm 紙面) の canvas 1684 px、200 px ≈ 3700 mm 実寸
+    const r = computePaperPerRealRatio(
+      {
+        widthMm: 297,
+        scale: { pixelDistanceCanvas: 200, realDistanceMm: 3700 },
+      },
+      1684,
+    );
+    // paperPxPerMm = 1684/297 ≈ 5.67
+    // pxPerMmReal  = 200/3700  ≈ 0.054
+    // paper_mm/real_mm = pxPerMmReal / paperPxPerMm ≈ 0.0095 (≈ 1/105)
+    expect(r).toBeCloseTo(0.0095, 3);
+  });
+
+  it('5000 mm の実寸位置を変換すると約 47.6 mm の紙面位置になる (1/100 縮尺)', () => {
+    const r = computePaperPerRealRatio(
+      {
+        widthMm: 297,
+        scale: { pixelDistanceCanvas: 200, realDistanceMm: 3700 },
+      },
+      1684,
+    );
+    expect(5000 * r).toBeCloseTo(47.7, 0); // ±0.5mm 程度
   });
 });
 
