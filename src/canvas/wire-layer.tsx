@@ -8,6 +8,7 @@ import type { KonvaEventObject } from 'konva/lib/Node';
 import { useProjectStore } from '../data/project-store';
 import { mmToPx, type Scale } from '../utils/coordinate';
 import { getWirePoints } from '../utils/wire-geometry';
+import { lockedLayerIds, sortWiresByLayerOrder } from '../data/layer-helpers';
 import type { Wire, WireType } from '../data/types';
 
 interface Props {
@@ -44,8 +45,9 @@ export function WireLayer({ pxPerMm }: Props): JSX.Element {
   const selectedSet = new Set(selectedIds);
   // Phase 2-D2: 非表示レイヤーに所属する wire、または端点シンボルが非表示レイヤーの場合は描画しない (F-08)
   const hiddenLayerIds = new Set(layers.filter((l) => !l.visible).map((l) => l.id));
+  const lockedIds = lockedLayerIds(layers);
   const symbolLayer = new Map(symbols.map((s) => [s.id, s.layerId]));
-  const visibleWires = wires.filter((w) => {
+  const filteredWires = wires.filter((w) => {
     if (hiddenLayerIds.has(w.layerId)) return false;
     const fromLayer = symbolLayer.get(w.fromSymbolId);
     const toLayer = symbolLayer.get(w.toSymbolId);
@@ -53,6 +55,8 @@ export function WireLayer({ pxPerMm }: Props): JSX.Element {
     if (toLayer !== undefined && hiddenLayerIds.has(toLayer)) return false;
     return true;
   });
+  // Phase 2-D3: layers 配列順 (= z-index) でソート (案 B)
+  const visibleWires = sortWiresByLayerOrder(filteredWires, layers);
 
   return (
     <Layer>
@@ -62,8 +66,10 @@ export function WireLayer({ pxPerMm }: Props): JSX.Element {
         const flat = points.flatMap((p) => [mmToPx(p.x, scale), mmToPx(p.y, scale)]);
         const style = styleFor(wire.type);
         const selected = selectedSet.has(wire.id);
+        const locked = lockedIds.has(wire.layerId);
 
         const handleClick = (e: KonvaEventObject<MouseEvent>) => {
+          if (locked) return;
           e.cancelBubble = true;
           if (e.evt.shiftKey) {
             toggleSelectSymbol(wire.id);
@@ -79,6 +85,7 @@ export function WireLayer({ pxPerMm }: Props): JSX.Element {
             flat={flat}
             style={style}
             selected={selected}
+            locked={locked}
             onClick={handleClick}
           />
         );
@@ -92,10 +99,12 @@ interface RendererProps {
   flat: number[];
   style: WireStyle;
   selected: boolean;
+  /** Phase 2-D3: ロック中レイヤー所属。クリックを無視して下層へ通す */
+  locked: boolean;
   onClick: (e: KonvaEventObject<MouseEvent>) => void;
 }
 
-function WireRenderer({ flat, style, selected, onClick }: RendererProps): JSX.Element {
+function WireRenderer({ flat, style, selected, locked, onClick }: RendererProps): JSX.Element {
   return (
     <>
       {/* 選択時のハイライト下線 (太い半透明青) */}
@@ -114,6 +123,7 @@ function WireRenderer({ flat, style, selected, onClick }: RendererProps): JSX.El
         stroke={style.stroke}
         strokeWidth={1.5}
         hitStrokeWidth={10}
+        listening={!locked}
         onClick={onClick}
         onTap={onClick}
         perfectDrawEnabled={false}

@@ -28,6 +28,11 @@ import { ScaleInputDialog } from '../dialogs/ScaleInputDialog';
 import { useKeyboardShortcuts } from '../../hooks/use-keyboard-shortcuts';
 import { pxToMm, computePxPerMm, distancePx } from '../../utils/coordinate';
 import { getSymbolDefinition } from '../../symbols/symbol-registry';
+import {
+  filterEditableEntityIds,
+  lockedLayerIds,
+} from '../../data/layer-helpers';
+import { BACKGROUND_LAYER_ID } from '../../data/types';
 
 /** Konva の Node 階層を遡って `sym-XXX` の id を持つ祖先 (= シンボル Group) を探す */
 function findSymbolIdFromTarget(target: Konva.Node): string | null {
@@ -46,6 +51,7 @@ export function CanvasArea(): JSX.Element {
   const drawing = useProjectStore((s) => s.project.drawing);
   const canvas = useProjectStore((s) => s.pdfCanvas);
   const symbols = useProjectStore((s) => s.project.symbols);
+  const layers = useProjectStore((s) => s.project.layers);
   const selectedIds = useProjectStore((s) => s.selectedIds);
   const mode = useProjectStore((s) => s.mode);
   const addSymbol = useProjectStore((s) => s.addSymbol);
@@ -130,20 +136,46 @@ export function CanvasArea(): JSX.Element {
         }
       } else if (e.key === 'Delete' && selectedIds.length > 0) {
         // Phase 2-C4: 参照する Wire があれば確認してから削除
+        // Phase 2-D3: ロック中レイヤー所属の id は削除対象から除外。
+        //   selectedIds には symbol/wire の両方が混在し得るので、
+        //   それぞれの editable な部分集合を計算して removeSymbols / removeWires を呼ぶ。
         void (async () => {
-          const wires = useProjectStore.getState().project.wires ?? [];
-          const idSet = new Set(selectedIds);
-          const affected = wires.filter(
-            (w) => idSet.has(w.fromSymbolId) || idSet.has(w.toSymbolId),
+          const state = useProjectStore.getState();
+          const allWires = state.project.wires ?? [];
+          const editable = filterEditableEntityIds(
+            selectedIds,
+            state.project.symbols,
+            allWires,
+            state.project.layers,
           );
-          if (affected.length > 0) {
+          if (editable.length === 0) return;
+          const editableSet = new Set(editable);
+          const symbolIds = state.project.symbols
+            .filter((s) => editableSet.has(s.id))
+            .map((s) => s.id);
+          const directWireIds = allWires
+            .filter((w) => editableSet.has(w.id))
+            .map((w) => w.id);
+          // シンボル削除で連鎖削除される wire (端点参照)
+          const symbolIdSet = new Set(symbolIds);
+          const cascadingWires = allWires.filter(
+            (w) =>
+              !directWireIds.includes(w.id) &&
+              (symbolIdSet.has(w.fromSymbolId) || symbolIdSet.has(w.toSymbolId)),
+          );
+          if (cascadingWires.length > 0) {
             const ok = await askConfirm(
-              `選択中のシンボルに接続された ${affected.length} 本の配線も一緒に削除されます。続行しますか?`,
+              `選択中のシンボルに接続された ${cascadingWires.length} 本の配線も一緒に削除されます。続行しますか?`,
               'シンボル削除',
             );
             if (!ok) return;
           }
-          removeSymbols(selectedIds);
+          if (directWireIds.length > 0) {
+            useProjectStore.getState().removeWires(directWireIds);
+          }
+          if (symbolIds.length > 0) {
+            removeSymbols(symbolIds);
+          }
         })();
       }
     };
@@ -269,8 +301,11 @@ export function CanvasArea(): JSX.Element {
       const width = maxX - minX;
       const height = maxY - minY;
       if (width > 3 || height > 3) {
+        // Phase 2-D3: ロック中レイヤー所属の symbol は矩形選択から除外
+        const locked = lockedLayerIds(layers);
         const insideIds: string[] = [];
         for (const sym of symbols) {
+          if (locked.has(sym.layerId)) continue;
           const def = getSymbolDefinition(sym.type);
           if (!def) continue;
           const cx = sym.position.x * pxPerMm;
@@ -316,21 +351,28 @@ export function CanvasArea(): JSX.Element {
     }
 
     if (mode.kind === 'wire') {
+      // Phase 2-D3: ロック中レイヤーのシンボルは始点・終点にできない (listening=false で
+      // 通常はそもそも target にならないが、防御として symbolId 確定後にフィルタ)
       const symbolId = findSymbolIdFromTarget(e.target);
+      const lockedSet = lockedLayerIds(layers);
+      const symbol = symbolId
+        ? symbols.find((s) => s.id === symbolId && !lockedSet.has(s.layerId))
+        : null;
+      const usableSymbolId = symbol?.id ?? null;
       const pointMm = { x: pxToMm(point.x, scaleObj), y: pxToMm(point.y, scaleObj) };
 
       if (!mode.fromSymbolId) {
         // 1 点目は必ずシンボル
-        if (symbolId) {
-          setWireFromSymbol(symbolId);
+        if (usableSymbolId) {
+          setWireFromSymbol(usableSymbolId);
         }
         return;
       }
       // from 設定済み: シンボルなら配線確定、それ以外なら waypoint 追加
-      if (symbolId && symbolId !== mode.fromSymbolId) {
-        addWire(mode.fromSymbolId, symbolId, mode.waypoints);
+      if (usableSymbolId && usableSymbolId !== mode.fromSymbolId) {
+        addWire(mode.fromSymbolId, usableSymbolId, mode.waypoints);
         resetWireProgress(); // 連続配線モード継続
-      } else if (!symbolId) {
+      } else if (!usableSymbolId) {
         appendWireWaypoint(pointMm);
       }
       return;
@@ -394,9 +436,12 @@ export function CanvasArea(): JSX.Element {
           onTap={handleStageClick}
           style={{ cursor }}
         >
-          <Layer listening={false}>
-            <KonvaImage image={canvas} />
-          </Layer>
+          {/* Phase 2-D3: 元図面レイヤー (background) の visible で PDF 描画を出し分け */}
+          {(layers.find((l) => l.id === BACKGROUND_LAYER_ID)?.visible ?? true) && (
+            <Layer listening={false}>
+              <KonvaImage image={canvas} />
+            </Layer>
+          )}
           <GridLayer pxPerMm={pxPerMm} canvasWidth={canvas.width} canvasHeight={canvas.height} />
           <WireLayer pxPerMm={pxPerMm} />
           <SymbolsLayer pxPerMm={pxPerMm} />

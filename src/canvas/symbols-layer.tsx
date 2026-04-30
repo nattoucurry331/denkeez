@@ -13,6 +13,7 @@ import { useProjectStore } from '../data/project-store';
 import { mmToPx, pxToMm, type Scale } from '../utils/coordinate';
 import { getSymbolDefinition } from '../symbols/symbol-registry';
 import { SymbolShapeRenderer, getShapeBoundingBox } from './symbol-shape';
+import { lockedLayerIds, sortSymbolsByLayerOrder } from '../data/layer-helpers';
 import type { ProjectSymbol } from '../data/types';
 
 interface Props {
@@ -32,7 +33,13 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
   const selectedSet = new Set(selectedIds);
   // Phase 2-D2: 非表示レイヤーに所属する symbol は描画しない (F-08)
   const hiddenLayerIds = new Set(layers.filter((l) => !l.visible).map((l) => l.id));
-  const visibleSymbols = symbols.filter((s) => !hiddenLayerIds.has(s.layerId));
+  // Phase 2-D3: ロック中レイヤーは draggable: false / クリック無視
+  const lockedIds = lockedLayerIds(layers);
+  // Phase 2-D3: layers 配列順 (= z-index) でソートして描画順を決定 (案 B)
+  const visibleSymbols = sortSymbolsByLayerOrder(
+    symbols.filter((s) => !hiddenLayerIds.has(s.layerId)),
+    layers,
+  );
 
   const transformerRef = useRef<Konva.Transformer>(null);
   const layerRef = useRef<Konva.Layer>(null);
@@ -45,42 +52,54 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
 
     if (selectedIds.length === 1) {
       const id = selectedIds[0];
-      const node = layer.findOne(`#sym-${id}`);
-      if (node) {
-        tr.nodes([node]);
-      } else {
+      // Phase 2-D3: 単一選択でもロック中レイヤーなら Transformer を出さない
+      const sym = symbols.find((s) => s.id === id);
+      const isLocked = sym ? lockedIds.has(sym.layerId) : false;
+      if (isLocked) {
         tr.nodes([]);
+      } else {
+        const node = layer.findOne(`#sym-${id}`);
+        if (node) {
+          tr.nodes([node]);
+        } else {
+          tr.nodes([]);
+        }
       }
     } else {
       tr.nodes([]);
     }
     layer.batchDraw();
-  }, [selectedIds, symbols, visibleSymbols.length]);
+  }, [selectedIds, symbols, visibleSymbols.length, lockedIds]);
 
   return (
     <Layer ref={layerRef}>
-      {visibleSymbols.map((sym) => (
-        <SymbolNode
-          key={sym.id}
-          symbol={sym}
-          scale={scale}
-          selected={selectedSet.has(sym.id)}
-          onClick={(shiftKey) => {
-            if (shiftKey) {
-              toggleSelectSymbol(sym.id);
-            } else {
-              selectSymbols([sym.id]);
-            }
-          }}
-          onDragEnd={(pxPos) => {
-            updateSymbolPosition(sym.id, {
-              x: pxToMm(pxPos.x, scale),
-              y: pxToMm(pxPos.y, scale),
-            });
-          }}
-          onTransformEnd={(rotation) => updateSymbolRotation(sym.id, rotation)}
-        />
-      ))}
+      {visibleSymbols.map((sym) => {
+        const isLocked = lockedIds.has(sym.layerId);
+        return (
+          <SymbolNode
+            key={sym.id}
+            symbol={sym}
+            scale={scale}
+            selected={selectedSet.has(sym.id)}
+            locked={isLocked}
+            onClick={(shiftKey) => {
+              if (isLocked) return;
+              if (shiftKey) {
+                toggleSelectSymbol(sym.id);
+              } else {
+                selectSymbols([sym.id]);
+              }
+            }}
+            onDragEnd={(pxPos) => {
+              updateSymbolPosition(sym.id, {
+                x: pxToMm(pxPos.x, scale),
+                y: pxToMm(pxPos.y, scale),
+              });
+            }}
+            onTransformEnd={(rotation) => updateSymbolRotation(sym.id, rotation)}
+          />
+        );
+      })}
       <Transformer
         ref={transformerRef}
         resizeEnabled={false}
@@ -99,6 +118,8 @@ interface SymbolNodeProps {
   symbol: ProjectSymbol;
   scale: Scale;
   selected: boolean;
+  /** Phase 2-D3: ロック中レイヤー所属。draggable / click を抑止 */
+  locked: boolean;
   onClick: (shiftKey: boolean) => void;
   onDragEnd: (pxPos: { x: number; y: number }) => void;
   onTransformEnd: (rotation: number) => void;
@@ -108,6 +129,7 @@ function SymbolNode({
   symbol,
   scale,
   selected,
+  locked,
   onClick,
   onDragEnd,
   onTransformEnd,
@@ -135,7 +157,8 @@ function SymbolNode({
       x={x}
       y={y}
       rotation={symbol.rotation}
-      draggable
+      draggable={!locked}
+      listening={!locked}
       onClick={handleClick}
       onTap={handleTap}
       onDragEnd={(e) => onDragEnd({ x: e.target.x(), y: e.target.y() })}

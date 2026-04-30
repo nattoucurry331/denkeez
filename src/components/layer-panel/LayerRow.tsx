@@ -87,7 +87,15 @@ export function LayerRow({
           e.stopPropagation();
           onToggleLocked();
         }}
-        title={layer.locked ? 'ロック中 (クリックで解除)' : '未ロック (クリックでロック)'}
+        title={
+          isBackground
+            ? layer.locked
+              ? 'ロック中 (元図面は元々編集対象外なので、現状の Phase では装飾的)'
+              : '未ロック (元図面は元々編集対象外なので、現状の Phase では装飾的)'
+            : layer.locked
+              ? 'ロック中 (クリックで解除)'
+              : '未ロック (クリックでロック)'
+        }
         style={iconButtonStyle}
         aria-pressed={layer.locked}
       >

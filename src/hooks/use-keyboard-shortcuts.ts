@@ -6,6 +6,7 @@
 import { useEffect } from 'react';
 import { useProjectStore } from '../data/project-store';
 import { useViewportStore } from '../data/viewport-store';
+import { filterEditableSymbolIds } from '../data/layer-helpers';
 
 interface Options {
   /**
@@ -59,19 +60,27 @@ export function useKeyboardShortcuts(options: Options): void {
       }
 
       // 矢印キー: 選択シンボルを移動 (1mm / Shift+10mm) — Phase 2-B3
+      // Phase 2-D3: ロック中レイヤー所属の symbol は移動対象から除外
       if (!ctrl && (
         e.key === 'ArrowUp' || e.key === 'ArrowDown' ||
         e.key === 'ArrowLeft' || e.key === 'ArrowRight'
       )) {
-        const selectedIds = useProjectStore.getState().selectedIds;
+        const state = useProjectStore.getState();
+        const selectedIds = state.selectedIds;
         if (selectedIds.length === 0) return;
+        const movableIds = filterEditableSymbolIds(
+          selectedIds,
+          state.project.symbols,
+          state.project.layers,
+        );
+        if (movableIds.length === 0) return;
         e.preventDefault();
         const step = e.shiftKey ? 10 : 1;
         const dx =
           e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
         const dy =
           e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-        useProjectStore.getState().moveSymbols(selectedIds, { x: dx, y: dy });
+        state.moveSymbols(movableIds, { x: dx, y: dy });
         return;
       }
 
