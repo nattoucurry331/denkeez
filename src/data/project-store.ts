@@ -235,12 +235,18 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
 
   updateSymbolPosition: (id, position) => {
     const current = get().project;
+    const newSymbols = current.symbols.map((s) => (s.id === id ? { ...s, position } : s));
+    // Phase 2-C4: 参照する Wire の lengthMm を再計算
+    const newWires = (current.wires ?? []).map((w) =>
+      w.fromSymbolId === id || w.toSymbolId === id
+        ? { ...w, lengthMm: computeWireLengthMm(w, newSymbols) }
+        : w,
+    );
     set({
       project: {
         ...current,
-        symbols: current.symbols.map((s) =>
-          s.id === id ? { ...s, position } : s,
-        ),
+        symbols: newSymbols,
+        wires: newWires,
         meta: { ...current.meta, updatedAt: nowIso() },
       },
       dirty: true,
@@ -277,14 +283,22 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
     if (ids.length === 0) return;
     const idSet = new Set(ids);
     const current = get().project;
+    const newSymbols = current.symbols.map((s) =>
+      idSet.has(s.id)
+        ? { ...s, position: { x: s.position.x + deltaMm.x, y: s.position.y + deltaMm.y } }
+        : s,
+    );
+    // Phase 2-C4: 参照する Wire の lengthMm を再計算
+    const newWires = (current.wires ?? []).map((w) =>
+      idSet.has(w.fromSymbolId) || idSet.has(w.toSymbolId)
+        ? { ...w, lengthMm: computeWireLengthMm(w, newSymbols) }
+        : w,
+    );
     set({
       project: {
         ...current,
-        symbols: current.symbols.map((s) =>
-          idSet.has(s.id)
-            ? { ...s, position: { x: s.position.x + deltaMm.x, y: s.position.y + deltaMm.y } }
-            : s,
-        ),
+        symbols: newSymbols,
+        wires: newWires,
         meta: { ...current.meta, updatedAt: nowIso() },
       },
       dirty: true,
@@ -295,14 +309,23 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
     if (ids.length === 0) return;
     const idSet = new Set(ids);
     const current = get().project;
+    // Phase 2-C4: 削除対象シンボルを参照する Wire も削除 (参照整合性)
+    const wires = current.wires ?? [];
+    const remainingWires = wires.filter(
+      (w) => !idSet.has(w.fromSymbolId) && !idSet.has(w.toSymbolId),
+    );
+    const removedWireIds = new Set(
+      wires.filter((w) => idSet.has(w.fromSymbolId) || idSet.has(w.toSymbolId)).map((w) => w.id),
+    );
     set({
       project: {
         ...current,
         symbols: current.symbols.filter((s) => !idSet.has(s.id)),
+        wires: remainingWires,
         meta: { ...current.meta, updatedAt: nowIso() },
       },
       dirty: true,
-      selectedIds: get().selectedIds.filter((id) => !idSet.has(id)),
+      selectedIds: get().selectedIds.filter((id) => !idSet.has(id) && !removedWireIds.has(id)),
     });
   },
 

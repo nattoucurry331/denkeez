@@ -13,6 +13,7 @@ import { useProjectStore } from '../../data/project-store';
 import { useViewportStore } from '../../data/viewport-store';
 import type { SymbolType } from '../../data/types';
 import { useViewportControls } from '../../canvas/viewport-controls';
+import { askConfirm } from '../../tauri/api';
 import { SymbolsLayer } from '../../canvas/symbols-layer';
 import { GridLayer } from '../../canvas/grid-layer';
 import { Minimap } from '../../canvas/minimap';
@@ -128,7 +129,22 @@ export function CanvasArea(): JSX.Element {
           clearSelection();
         }
       } else if (e.key === 'Delete' && selectedIds.length > 0) {
-        removeSymbols(selectedIds);
+        // Phase 2-C4: 参照する Wire があれば確認してから削除
+        void (async () => {
+          const wires = useProjectStore.getState().project.wires ?? [];
+          const idSet = new Set(selectedIds);
+          const affected = wires.filter(
+            (w) => idSet.has(w.fromSymbolId) || idSet.has(w.toSymbolId),
+          );
+          if (affected.length > 0) {
+            const ok = await askConfirm(
+              `選択中のシンボルに接続された ${affected.length} 本の配線も一緒に削除されます。続行しますか?`,
+              'シンボル削除',
+            );
+            if (!ok) return;
+          }
+          removeSymbols(selectedIds);
+        })();
       }
     };
     window.addEventListener('keydown', handler);

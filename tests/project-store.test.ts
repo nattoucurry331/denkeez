@@ -190,6 +190,119 @@ describe('project-store symbol CRUD', () => {
     });
   });
 
+  describe('Phase 2-C: スケール / 配線', () => {
+    it('setScale で drawing.scale が保存される + dirty=true', () => {
+      const store = useProjectStore.getState();
+      store.loadPdf(
+        'test.pdf',
+        { selectedPage: 1, widthMm: 297, heightMm: 420 },
+        { width: 100, height: 100 } as unknown as HTMLCanvasElement,
+        new ArrayBuffer(0),
+      );
+      store.markSaved();
+      store.setScale({ pixelDistanceCanvas: 200, realDistanceMm: 5000 });
+      expect(useProjectStore.getState().project.drawing?.scale).toEqual({
+        pixelDistanceCanvas: 200,
+        realDistanceMm: 5000,
+      });
+      expect(isDirty()).toBe(true);
+    });
+
+    it('addWire で wires に追加 + lengthMm 自動計算', () => {
+      const store = useProjectStore.getState();
+      store.addSymbol('downlight', { x: 0, y: 0 });
+      store.addSymbol('downlight', { x: 100, y: 0 });
+      const ids = useProjectStore.getState().project.symbols.map((s) => s.id);
+      store.markSaved();
+      const wireId = store.addWire(ids[0]!, ids[1]!, []);
+      const wires = useProjectStore.getState().project.wires ?? [];
+      expect(wires).toHaveLength(1);
+      expect(wires[0]?.id).toBe(wireId);
+      expect(wires[0]?.lengthMm).toBe(100);
+      expect(isDirty()).toBe(true);
+    });
+
+    it('addWire の waypoints 経由で lengthMm が距離合計', () => {
+      const store = useProjectStore.getState();
+      store.addSymbol('downlight', { x: 0, y: 0 });
+      store.addSymbol('downlight', { x: 100, y: 100 });
+      const ids = useProjectStore.getState().project.symbols.map((s) => s.id);
+      store.addWire(ids[0]!, ids[1]!, [{ x: 100, y: 0 }]);
+      const wire = useProjectStore.getState().project.wires?.[0];
+      // (0,0)→(100,0)=100, (100,0)→(100,100)=100、合計 200
+      expect(wire?.lengthMm).toBe(200);
+    });
+
+    it('updateWire で type / cable / circuit を変更可能', () => {
+      const store = useProjectStore.getState();
+      store.addSymbol('downlight', { x: 0, y: 0 });
+      store.addSymbol('downlight', { x: 100, y: 0 });
+      const ids = useProjectStore.getState().project.symbols.map((s) => s.id);
+      const wireId = store.addWire(ids[0]!, ids[1]!, []);
+      store.markSaved();
+      store.updateWire(wireId, { type: 'floor', cable: 'CV', circuit: 'L-1' });
+      const wire = useProjectStore.getState().project.wires?.[0];
+      expect(wire?.type).toBe('floor');
+      expect(wire?.cable).toBe('CV');
+      expect(wire?.circuit).toBe('L-1');
+      expect(isDirty()).toBe(true);
+    });
+
+    it('removeSymbols で参照 Wire が同期削除される (R-09.1.4)', () => {
+      const store = useProjectStore.getState();
+      store.addSymbol('downlight', { x: 0, y: 0 });
+      store.addSymbol('downlight', { x: 100, y: 0 });
+      store.addSymbol('downlight', { x: 200, y: 0 });
+      const ids = useProjectStore.getState().project.symbols.map((s) => s.id);
+      store.addWire(ids[0]!, ids[1]!, []);
+      store.addWire(ids[1]!, ids[2]!, []);
+      store.removeSymbols([ids[1]!]); // 中央のシンボル削除 → 両方の wire が削除
+      const after = useProjectStore.getState().project;
+      expect(after.symbols).toHaveLength(2);
+      expect(after.wires).toHaveLength(0);
+    });
+
+    it('updateSymbolPosition で参照 Wire の lengthMm が再計算される', () => {
+      const store = useProjectStore.getState();
+      store.addSymbol('downlight', { x: 0, y: 0 });
+      store.addSymbol('downlight', { x: 100, y: 0 });
+      const ids = useProjectStore.getState().project.symbols.map((s) => s.id);
+      store.addWire(ids[0]!, ids[1]!, []);
+      // 100mm の配線
+      expect(useProjectStore.getState().project.wires?.[0]?.lengthMm).toBe(100);
+      // ID0 を (200,0) に移動 → (200→100) = 100mm から (200→100) = 100mm... ↑ 待て
+      // (0,0) → (100,0) = 100、(0,0) を (200,0) に移動すると (200,0)→(100,0) = 100、変わらず
+      // 別パターン: ID0 を (0,300) に移動 → (0,300)→(100,0) = sqrt(100²+300²) = sqrt(100000) ≈ 316.23
+      store.updateSymbolPosition(ids[0]!, { x: 0, y: 300 });
+      const newLength = useProjectStore.getState().project.wires?.[0]?.lengthMm;
+      expect(newLength).toBeCloseTo(Math.sqrt(100 * 100 + 300 * 300), 1);
+    });
+
+    it('moveSymbols で参照 Wire の lengthMm が再計算される', () => {
+      const store = useProjectStore.getState();
+      store.addSymbol('downlight', { x: 0, y: 0 });
+      store.addSymbol('downlight', { x: 100, y: 0 });
+      const ids = useProjectStore.getState().project.symbols.map((s) => s.id);
+      store.addWire(ids[0]!, ids[1]!, []);
+      // 両方を (50, 50) ずらす → 距離 100 のまま
+      store.moveSymbols(ids, { x: 50, y: 50 });
+      const length = useProjectStore.getState().project.wires?.[0]?.lengthMm;
+      expect(length).toBeCloseTo(100, 1);
+    });
+
+    it('removeWires で wires が削除 + dirty=true', () => {
+      const store = useProjectStore.getState();
+      store.addSymbol('downlight', { x: 0, y: 0 });
+      store.addSymbol('downlight', { x: 100, y: 0 });
+      const ids = useProjectStore.getState().project.symbols.map((s) => s.id);
+      const wireId = store.addWire(ids[0]!, ids[1]!, []);
+      store.markSaved();
+      store.removeWires([wireId]);
+      expect(useProjectStore.getState().project.wires).toEqual([]);
+      expect(isDirty()).toBe(true);
+    });
+  });
+
   describe('zundo undo / redo (Phase 2-A4)', () => {
     beforeEach(() => {
       useProjectStore.temporal.getState().clear();
