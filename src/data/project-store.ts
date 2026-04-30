@@ -11,7 +11,7 @@ import { generateId } from '../utils/id';
 import { APP_VERSION, SCHEMA_VERSION } from '../shared/constants/app';
 import { debounce } from '../utils/debounce';
 import type { Rotation } from '../pdf/pdf-loader';
-import type { Project, ProjectDrawing, ProjectSymbol } from './types';
+import type { Project, ProjectDrawing, ProjectSymbol, PropertyValue } from './types';
 import { DEFAULT_GRID_CONFIG } from './types';
 
 /** 操作モード。配置モード時は symbolType を保持する。 */
@@ -60,6 +60,8 @@ export interface ProjectActions {
   // M3: シンボル CRUD
   addSymbol: (symbolType: ProjectSymbol['type'], position: { x: number; y: number }) => void;
   updateSymbolPosition: (id: string, position: { x: number; y: number }) => void;
+  /** Phase 2-B2: シンボルのプロパティ (回路番号 / W数 等) を一括更新 */
+  updateSymbolProperties: (id: string, properties: Record<string, PropertyValue>) => void;
   removeSymbols: (ids: readonly string[]) => void;
   // M3: 選択
   selectSymbols: (ids: readonly string[]) => void;
@@ -204,6 +206,20 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         ...current,
         symbols: current.symbols.map((s) =>
           s.id === id ? { ...s, position } : s,
+        ),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  updateSymbolProperties: (id, properties) => {
+    const current = get().project;
+    set({
+      project: {
+        ...current,
+        symbols: current.symbols.map((s) =>
+          s.id === id ? { ...s, properties: { ...properties } } : s,
         ),
         meta: { ...current.meta, updatedAt: nowIso() },
       },
