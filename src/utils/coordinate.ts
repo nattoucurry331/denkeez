@@ -57,3 +57,32 @@ export function pointPxToMm(point: Point, scale: Scale): Point {
     y: pxToMm(point.y, scale),
   };
 }
+
+/**
+ * Phase 2-C1: drawing と canvas size から pxPerMm を計算する。
+ * scale 設定時は校正済みの実寸ベース、未設定時は紙面実寸ベース (Phase 1 既存挙動)。
+ */
+export function computePxPerMm(
+  drawing: {
+    widthMm: number;
+    scale?: { pixelDistanceCanvas: number; realDistanceMm: number } | undefined;
+  },
+  canvasWidth: number,
+): number {
+  if (drawing.scale && drawing.scale.realDistanceMm > 0) {
+    return drawing.scale.pixelDistanceCanvas / drawing.scale.realDistanceMm;
+  }
+  if (drawing.widthMm > 0 && canvasWidth > 0) {
+    return canvasWidth / drawing.widthMm;
+  }
+  return 1; // フォールバック (実用上は到達しない)
+}
+
+/**
+ * 2 点 (canvas px) の距離を計算する。スケール校正で使う。
+ */
+export function distancePx(a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}

@@ -11,13 +11,27 @@ import { generateId } from '../utils/id';
 import { APP_VERSION, SCHEMA_VERSION } from '../shared/constants/app';
 import { debounce } from '../utils/debounce';
 import type { Rotation } from '../pdf/pdf-loader';
-import type { Project, ProjectDrawing, ProjectSymbol, PropertyValue } from './types';
+import type {
+  Project,
+  ProjectDrawing,
+  ProjectDrawingScale,
+  ProjectSymbol,
+  PropertyValue,
+  Wire,
+} from './types';
 import { DEFAULT_GRID_CONFIG } from './types';
+import { computeWireLengthMm } from '../utils/wire-geometry';
 
-/** 操作モード。配置モード時は symbolType を保持する。 */
+/** 操作モード。配置モード時は symbolType、スケール設定中は firstPointPx、配線モードは fromSymbolId と waypoints を保持する。 */
 export type EditorMode =
   | { kind: 'select' }
-  | { kind: 'place'; symbolType: string };
+  | { kind: 'place'; symbolType: string }
+  | { kind: 'scale'; firstPointPx?: { x: number; y: number } | undefined }
+  | {
+      kind: 'wire';
+      fromSymbolId?: string | undefined;
+      waypoints: { x: number; y: number }[];
+    };
 
 export interface ProjectState {
   project: Project;
@@ -77,7 +91,23 @@ export interface ProjectActions {
   exitMode: () => void;
   // Phase 2-A2: グリッド
   toggleGrid: () => void;
-  setGridSpacing: (spacing: 100 | 50) => void;
+  setGridSpacing: (spacing: 910 | 455 | 100 | 50) => void;
+  // Phase 2-C1: スケール設定
+  enterScaleMode: () => void;
+  setScaleFirstPoint: (pointPx: { x: number; y: number } | undefined) => void;
+  setScale: (scale: ProjectDrawingScale | undefined) => void;
+  // Phase 2-C2: 配線
+  enterWireMode: () => void;
+  setWireFromSymbol: (symbolId: string) => void;
+  appendWireWaypoint: (pointMm: { x: number; y: number }) => void;
+  resetWireProgress: () => void;
+  addWire: (
+    fromSymbolId: string,
+    toSymbolId: string,
+    waypoints: { x: number; y: number }[],
+  ) => string;
+  updateWire: (id: string, updates: Partial<Omit<Wire, 'id' | 'lengthMm'>>) => void;
+  removeWires: (ids: readonly string[]) => void;
 }
 
 function createEmptyProject(): Project {
@@ -205,12 +235,18 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
 
   updateSymbolPosition: (id, position) => {
     const current = get().project;
+    const newSymbols = current.symbols.map((s) => (s.id === id ? { ...s, position } : s));
+    // Phase 2-C4: 参照する Wire の lengthMm を再計算
+    const newWires = (current.wires ?? []).map((w) =>
+      w.fromSymbolId === id || w.toSymbolId === id
+        ? { ...w, lengthMm: computeWireLengthMm(w, newSymbols) }
+        : w,
+    );
     set({
       project: {
         ...current,
-        symbols: current.symbols.map((s) =>
-          s.id === id ? { ...s, position } : s,
-        ),
+        symbols: newSymbols,
+        wires: newWires,
         meta: { ...current.meta, updatedAt: nowIso() },
       },
       dirty: true,
@@ -247,14 +283,22 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
     if (ids.length === 0) return;
     const idSet = new Set(ids);
     const current = get().project;
+    const newSymbols = current.symbols.map((s) =>
+      idSet.has(s.id)
+        ? { ...s, position: { x: s.position.x + deltaMm.x, y: s.position.y + deltaMm.y } }
+        : s,
+    );
+    // Phase 2-C4: 参照する Wire の lengthMm を再計算
+    const newWires = (current.wires ?? []).map((w) =>
+      idSet.has(w.fromSymbolId) || idSet.has(w.toSymbolId)
+        ? { ...w, lengthMm: computeWireLengthMm(w, newSymbols) }
+        : w,
+    );
     set({
       project: {
         ...current,
-        symbols: current.symbols.map((s) =>
-          idSet.has(s.id)
-            ? { ...s, position: { x: s.position.x + deltaMm.x, y: s.position.y + deltaMm.y } }
-            : s,
-        ),
+        symbols: newSymbols,
+        wires: newWires,
         meta: { ...current.meta, updatedAt: nowIso() },
       },
       dirty: true,
@@ -265,14 +309,23 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
     if (ids.length === 0) return;
     const idSet = new Set(ids);
     const current = get().project;
+    // Phase 2-C4: 削除対象シンボルを参照する Wire も削除 (参照整合性)
+    const wires = current.wires ?? [];
+    const remainingWires = wires.filter(
+      (w) => !idSet.has(w.fromSymbolId) && !idSet.has(w.toSymbolId),
+    );
+    const removedWireIds = new Set(
+      wires.filter((w) => idSet.has(w.fromSymbolId) || idSet.has(w.toSymbolId)).map((w) => w.id),
+    );
     set({
       project: {
         ...current,
         symbols: current.symbols.filter((s) => !idSet.has(s.id)),
+        wires: remainingWires,
         meta: { ...current.meta, updatedAt: nowIso() },
       },
       dirty: true,
-      selectedIds: get().selectedIds.filter((id) => !idSet.has(id)),
+      selectedIds: get().selectedIds.filter((id) => !idSet.has(id) && !removedWireIds.has(id)),
     });
   },
 
@@ -323,6 +376,134 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         meta: { ...current.meta, updatedAt: nowIso() },
       },
       dirty: true,
+    });
+  },
+
+  enterScaleMode: () =>
+    set({
+      mode: { kind: 'scale' },
+      selectedIds: [],
+    }),
+
+  setScaleFirstPoint: (pointPx) =>
+    set({
+      mode: { kind: 'scale', firstPointPx: pointPx },
+    }),
+
+  setScale: (scale) => {
+    const current = get().project;
+    if (!current.drawing) return;
+    set({
+      project: {
+        ...current,
+        drawing: { ...current.drawing, scale },
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  // Phase 2-C2: 配線関連 actions
+  enterWireMode: () =>
+    set({
+      mode: { kind: 'wire', waypoints: [] },
+      selectedIds: [],
+    }),
+
+  setWireFromSymbol: (symbolId) => {
+    const current = get().mode;
+    if (current.kind !== 'wire') return;
+    set({
+      mode: { kind: 'wire', fromSymbolId: symbolId, waypoints: [] },
+    });
+  },
+
+  appendWireWaypoint: (pointMm) => {
+    const current = get().mode;
+    if (current.kind !== 'wire' || !current.fromSymbolId) return;
+    set({
+      mode: {
+        kind: 'wire',
+        fromSymbolId: current.fromSymbolId,
+        waypoints: [...current.waypoints, pointMm],
+      },
+    });
+  },
+
+  resetWireProgress: () => {
+    const current = get().mode;
+    if (current.kind !== 'wire') return;
+    set({
+      mode: { kind: 'wire', waypoints: [] },
+    });
+  },
+
+  addWire: (fromSymbolId, toSymbolId, waypoints) => {
+    const current = get().project;
+    const newId = generateId();
+    const lengthMm = computeWireLengthMm(
+      { fromSymbolId, toSymbolId, waypoints },
+      current.symbols,
+    );
+    const wire: Wire = {
+      id: newId,
+      fromSymbolId,
+      toSymbolId,
+      waypoints,
+      type: 'ceiling',
+      cable: 'VVF1.6×2C',
+      circuit: '',
+      lengthMm,
+    };
+    set({
+      project: {
+        ...current,
+        wires: [...(current.wires ?? []), wire],
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+    return newId;
+  },
+
+  updateWire: (id, updates) => {
+    const current = get().project;
+    const wires = current.wires ?? [];
+    set({
+      project: {
+        ...current,
+        wires: wires.map((w) => {
+          if (w.id !== id) return w;
+          const merged = { ...w, ...updates };
+          // waypoints / from / to が変わったら lengthMm 再計算
+          if (
+            updates.waypoints !== undefined ||
+            updates.fromSymbolId !== undefined ||
+            updates.toSymbolId !== undefined
+          ) {
+            merged.lengthMm = computeWireLengthMm(merged, current.symbols);
+          }
+          return merged;
+        }),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  removeWires: (ids) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const current = get().project;
+    const wires = current.wires ?? [];
+    set({
+      project: {
+        ...current,
+        wires: wires.filter((w) => !idSet.has(w.id)),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+      selectedIds: get().selectedIds.filter((sid) => !idSet.has(sid)),
     });
   },
   }),

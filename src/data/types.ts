@@ -18,6 +18,17 @@ export interface ProjectMeta {
   schemaVersion: number;
 }
 
+/** Phase 2-C1: スケール校正データ (F-04)。
+ * 2 点クリックで「canvas px 距離 ↔ 実寸 mm」のマッピングを保存する。
+ * 設定時は pxPerMm の計算式が「実寸ベース」に切り替わる。
+ */
+export interface ProjectDrawingScale {
+  /** 校正に使った 2 点の canvas px 距離 */
+  pixelDistanceCanvas: number;
+  /** 校正に使った実寸 (mm) */
+  realDistanceMm: number;
+}
+
 export interface ProjectDrawing {
   type: 'pdf';
   filename: string;
@@ -25,6 +36,8 @@ export interface ProjectDrawing {
   /** PDF ページの実寸 (mm) — 内部の座標系はすべて mm で統一 (REQUIREMENTS.md §9.1.1) */
   widthMm: number;
   heightMm: number;
+  /** Phase 2-C: スケール校正 (未設定時は紙面実寸モード) */
+  scale?: ProjectDrawingScale | undefined;
 }
 
 /** Phase 2-B: 主要 20 種の JIS C 0303 シンボル種別 */
@@ -53,33 +66,72 @@ export interface ProjectSymbol {
   properties: Record<string, PropertyValue>;
 }
 
-/** Phase 2-A2: グリッド表示設定 (Project に永続化) */
+/** Phase 2-A2 / 2-C 拡張: グリッド表示設定 (Project に永続化) */
 export interface ProjectGridConfig {
   enabled: boolean;
   /**
    * グリッド間隔 (mm)。
-   * Phase 1 PoC〜2-A では F-04 (スケール設定) 未実装のため、紙面実寸として扱う。
-   * 暫定候補は 100/50mm。Phase 2-C で F-04 実装後に「和室基準 910/455mm = 縮尺込みの施工実寸」へ戻す予定。
+   * Phase 2-C で和室基準 910/455mm を実装。スケール未設定時は 100/50mm が画面上で
+   * 視認しやすいので候補に残す。spacingMm 自体は 4 値の union。
    */
-  spacingMm: 100 | 50;
+  spacingMm: 910 | 455 | 100 | 50;
   /** 線色 (HEX) */
   color: string;
 }
 
-/** UI で選択可能な spacing 候補 (Phase 2-A 暫定) */
-export const GRID_SPACING_OPTIONS: ProjectGridConfig['spacingMm'][] = [100, 50];
+/** UI で選択可能な spacing 候補 */
+export const GRID_SPACING_OPTIONS: ProjectGridConfig['spacingMm'][] = [910, 455, 100, 50];
 
 export const DEFAULT_GRID_CONFIG: ProjectGridConfig = {
   enabled: false,
-  spacingMm: 100,
+  spacingMm: 910,
   color: '#cccccc',
 };
+
+/** Phase 2-C: 配線種別 (REQUIREMENTS.md §3.2 F-07) */
+export type WireType = 'ceiling' | 'floor' | 'concealed' | 'exposed';
+
+/** Phase 2-C: ケーブル種別 */
+export type CableType = 'VVF1.6×2C' | 'VVF2.0×2C' | 'VVR' | 'CV' | 'IV' | 'その他';
+
+export const WIRE_TYPE_OPTIONS: { value: WireType; label: string }[] = [
+  { value: 'ceiling', label: '天井ふところ (実線)' },
+  { value: 'floor', label: '床下 (破線)' },
+  { value: 'concealed', label: '壁内隠蔽 (点線)' },
+  { value: 'exposed', label: '露出 (青実線)' },
+];
+
+export const CABLE_TYPE_OPTIONS: CableType[] = [
+  'VVF1.6×2C',
+  'VVF2.0×2C',
+  'VVR',
+  'CV',
+  'IV',
+  'その他',
+];
+
+/** Phase 2-C: 配線データ (REQUIREMENTS.md §5.2) */
+export interface Wire {
+  id: string;
+  fromSymbolId: string;
+  toSymbolId: string;
+  /** 中継点 (mm)、from/to の間の経路 */
+  waypoints: { x: number; y: number }[];
+  type: WireType;
+  cable: CableType;
+  cableCustom?: string | undefined;
+  circuit: string;
+  /** 自動算出される配線長 (mm) */
+  lengthMm: number;
+}
 
 export interface Project {
   meta: ProjectMeta;
   /** PDF 未読込時は null */
   drawing: ProjectDrawing | null;
   symbols: ProjectSymbol[];
+  /** Phase 2-C で追加。後方互換のため optional */
+  wires?: Wire[] | undefined;
   /** Phase 2-A2 で追加。後方互換のため optional (未指定なら DEFAULT_GRID_CONFIG) */
   grid?: ProjectGridConfig;
 }

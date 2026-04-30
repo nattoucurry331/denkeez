@@ -7,18 +7,20 @@ import { getSymbolDefinition } from '../../symbols/symbol-registry';
 import { getPropertySchema } from '../../symbols/property-schemas';
 import { PropertyField } from './PropertyField';
 import { EmptyPropertyPanel } from './EmptyPropertyPanel';
+import { WirePropertyForm } from './WirePropertyForm';
 import type { PropertyValue } from '../../data/types';
 
 export function PropertyPanel(): JSX.Element {
   const selectedIds = useProjectStore((s) => s.selectedIds);
   const symbols = useProjectStore((s) => s.project.symbols);
+  const wires = useProjectStore((s) => s.project.wires) ?? [];
   const updateSymbolProperties = useProjectStore((s) => s.updateSymbolProperties);
 
   if (selectedIds.length === 0) {
     return (
       <EmptyPropertyPanel
-        message="シンボル未選択"
-        hint="シンボルをクリックすると、ここで回路番号や型番を編集できます。"
+        message="未選択"
+        hint="シンボルや配線をクリックすると、ここで詳細を編集できます。"
       />
     );
   }
@@ -27,18 +29,25 @@ export function PropertyPanel(): JSX.Element {
     return (
       <EmptyPropertyPanel
         message={`${selectedIds.length} 個選択中`}
-        hint="プロパティの編集は単一選択時のみ可能です (Phase 2-B 仕様)。"
+        hint="プロパティの編集は単一選択時のみ可能です。"
       />
     );
   }
 
   const selectedId = selectedIds[0];
   if (!selectedId) {
-    return <EmptyPropertyPanel message="シンボル未選択" />;
+    return <EmptyPropertyPanel message="未選択" />;
   }
+
+  // Phase 2-C3: Wire の場合は WirePropertyForm へ
+  const wire = wires.find((w) => w.id === selectedId);
+  if (wire) {
+    return <WirePropertyForm wire={wire} />;
+  }
+
   const symbol = symbols.find((s) => s.id === selectedId);
   if (!symbol) {
-    return <EmptyPropertyPanel message="選択されたシンボルが見つかりません" />;
+    return <EmptyPropertyPanel message="選択されたエンティティが見つかりません" />;
   }
 
   const schema = getPropertySchema(symbol.type);
