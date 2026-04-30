@@ -40,6 +40,42 @@ export interface ProjectDrawing {
   scale?: ProjectDrawingScale | undefined;
 }
 
+/** Phase 2-D1: レイヤー定義 (REQUIREMENTS.md §5.2 / F-08)。
+ *  `layers` 配列の順序がそのまま z-index となる (index 0 が最下、末尾が最上)。
+ *  layers[0] は常に kind: 'background' の元図面レイヤー (削除不可・固定 ID)。
+ */
+export interface Layer {
+  id: string;
+  name: string;
+  /** HEX 色 (#RRGGBB) — レイヤーパネル表示や配線色のヒント */
+  color: string;
+  visible: boolean;
+  locked: boolean;
+  /**
+   * 'background': 元 PDF 背景用の特別レイヤー。固定 ID = BACKGROUND_LAYER_ID、
+   *   常に layers[0]、削除不可、初期状態で locked: true (REQUIREMENTS §3.2 F-08)
+   * 'user': 通常のユーザー編集対象レイヤー
+   */
+  kind: 'background' | 'user';
+}
+
+/** 元図面レイヤーの固定 ID。Project 全体でこの ID を持つレイヤーは 1 個だけ。 */
+export const BACKGROUND_LAYER_ID = 'layer-background';
+
+/** schemaVersion 1 (Phase 2-C 以前) のファイルを読み込んだ際、
+ *  layerId 未設定の symbol/wire を一旦受け止めるレイヤー名。 */
+export const MIGRATED_LAYER_NAME = '未分類';
+
+/** F-08 標準ユーザーレイヤープリセット。新規プロジェクト時に背景レイヤーの直上に生成される。
+ *  REQUIREMENTS.md §3.2 F-08 「標準レイヤー」記載順を踏襲。色はパネル表示用ヒント。 */
+export const STANDARD_USER_LAYER_PRESETS: ReadonlyArray<{ name: string; color: string }> = [
+  { name: '照明回路', color: '#f0a000' },
+  { name: 'コンセント回路', color: '#c04080' },
+  { name: '弱電', color: '#3070c0' },
+  { name: '換気・空調', color: '#40a060' },
+  { name: '寸法・注記', color: '#666666' },
+];
+
 /** Phase 2-B: 主要 20 種の JIS C 0303 シンボル種別 */
 export type SymbolType =
   // 照明 (6)
@@ -64,6 +100,9 @@ export interface ProjectSymbol {
   position: { x: number; y: number };
   rotation: number;
   properties: Record<string, PropertyValue>;
+  /** Phase 2-D1: 所属レイヤー ID (REQUIREMENTS §4.3)。schemaVersion 2 で必須化。
+   *  schemaVersion 1 ファイル読込時はマイグレーションで「未分類」レイヤーに割当。 */
+  layerId: string;
 }
 
 /** Phase 2-A2 / 2-C 拡張: グリッド表示設定 (Project に永続化) */
@@ -123,12 +162,18 @@ export interface Wire {
   circuit: string;
   /** 自動算出される配線長 (mm) */
   lengthMm: number;
+  /** Phase 2-D1: 所属レイヤー ID。schemaVersion 2 で必須化。 */
+  layerId: string;
 }
 
 export interface Project {
   meta: ProjectMeta;
   /** PDF 未読込時は null */
   drawing: ProjectDrawing | null;
+  /** Phase 2-D1 で追加 (schemaVersion 2 で必須化)。
+   *  配列順 = z-index (0 が最下層)。layers[0] は常に kind: 'background' (元図面レイヤー、削除不可)。
+   *  schemaVersion 1 ファイル読込時は project-io.ts のマイグレーションで自動生成される。 */
+  layers: Layer[];
   symbols: ProjectSymbol[];
   /** Phase 2-C で追加。後方互換のため optional */
   wires?: Wire[] | undefined;

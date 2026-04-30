@@ -19,6 +19,16 @@ function makeProject(name: string): Project {
       schemaVersion: SCHEMA_VERSION,
     },
     drawing: null,
+    layers: [
+      {
+        id: 'layer-background',
+        name: '元図面',
+        color: '#888888',
+        visible: true,
+        locked: true,
+        kind: 'background',
+      },
+    ],
     symbols: [],
   };
 }

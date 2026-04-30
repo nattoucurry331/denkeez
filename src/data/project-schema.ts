@@ -44,12 +44,15 @@ const SymbolTypeSchema = z.enum([
 
 const PropertyValueSchema = z.union([z.string(), z.number().finite(), z.boolean()]);
 
+// Phase 2-D1: layerId は schemaVersion 2 で必須化したが、v1 ファイル後方互換のため
+// スキーマレベルでは optional とし、project-io.ts のマイグレーションで補う。
 const ProjectSymbolSchema = z.object({
   id: z.string().min(1),
   type: SymbolTypeSchema,
   position: PointSchema,
   rotation: z.number().finite(),
   properties: z.record(z.string(), PropertyValueSchema),
+  layerId: z.string().min(1).optional(),
 });
 
 const ProjectGridConfigSchema = z.object({
@@ -61,6 +64,7 @@ const ProjectGridConfigSchema = z.object({
 const WireTypeSchema = z.enum(['ceiling', 'floor', 'concealed', 'exposed']);
 const CableTypeSchema = z.enum(['VVF1.6×2C', 'VVF2.0×2C', 'VVR', 'CV', 'IV', 'その他']);
 
+// Phase 2-D1: layerId は schemaVersion 2 で必須化 (上の ProjectSymbolSchema と同方針)
 const WireSchema = z.object({
   id: z.string().min(1),
   fromSymbolId: z.string().min(1),
@@ -71,11 +75,26 @@ const WireSchema = z.object({
   cableCustom: z.string().optional(),
   circuit: z.string(),
   lengthMm: z.number().nonnegative(),
+  layerId: z.string().min(1).optional(),
 });
 
+// Phase 2-D1: レイヤー (REQUIREMENTS §5.2 / F-08)
+const LayerKindSchema = z.enum(['background', 'user']);
+const LayerSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  color: z.string().min(1),
+  visible: z.boolean(),
+  locked: z.boolean(),
+  kind: LayerKindSchema,
+});
+
+// Phase 2-D1: layers も v1 ファイル互換のため optional。
+// schemaVersion 2 の場合は project-io.ts の migrate で必須性を担保する。
 export const ProjectSchema = z.object({
   meta: ProjectMetaSchema,
   drawing: ProjectDrawingSchema.nullable(),
+  layers: z.array(LayerSchema).optional(),
   symbols: z.array(ProjectSymbolSchema),
   wires: z.array(WireSchema).optional(),
   grid: ProjectGridConfigSchema.optional(),
