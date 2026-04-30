@@ -21,10 +21,25 @@ import {
   type SelectionRect,
 } from '../../canvas/selection-rect-layer';
 import { ScaleOverlayLayer } from '../../canvas/scale-overlay-layer';
+import { WireLayer } from '../../canvas/wire-layer';
+import { WirePreviewLayer } from '../../canvas/wire-preview-layer';
 import { ScaleInputDialog } from '../dialogs/ScaleInputDialog';
 import { useKeyboardShortcuts } from '../../hooks/use-keyboard-shortcuts';
 import { pxToMm, computePxPerMm, distancePx } from '../../utils/coordinate';
 import { getSymbolDefinition } from '../../symbols/symbol-registry';
+
+/** Konva の Node 階層を遡って `sym-XXX` の id を持つ祖先 (= シンボル Group) を探す */
+function findSymbolIdFromTarget(target: Konva.Node): string | null {
+  let node: Konva.Node | null = target;
+  while (node) {
+    const id = node.id();
+    if (typeof id === 'string' && id.startsWith('sym-')) {
+      return id.substring(4);
+    }
+    node = node.getParent();
+  }
+  return null;
+}
 
 export function CanvasArea(): JSX.Element {
   const drawing = useProjectStore((s) => s.project.drawing);
@@ -39,6 +54,10 @@ export function CanvasArea(): JSX.Element {
   const selectSymbols = useProjectStore((s) => s.selectSymbols);
   const setScaleFirstPoint = useProjectStore((s) => s.setScaleFirstPoint);
   const setScale = useProjectStore((s) => s.setScale);
+  const setWireFromSymbol = useProjectStore((s) => s.setWireFromSymbol);
+  const appendWireWaypoint = useProjectStore((s) => s.appendWireWaypoint);
+  const addWire = useProjectStore((s) => s.addWire);
+  const resetWireProgress = useProjectStore((s) => s.resetWireProgress);
 
   const viewportScale = useViewportStore((s) => s.scale);
   const offsetX = useViewportStore((s) => s.offsetX);
@@ -61,6 +80,8 @@ export function CanvasArea(): JSX.Element {
     open: false,
     pixelDistance: 0,
   });
+  // 配線モード用カーソル位置 (canvas 論理座標)
+  const [wireCursorPx, setWireCursorPx] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (!drawing) return;
@@ -92,7 +113,15 @@ export function CanvasArea(): JSX.Element {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (mode.kind === 'place' || mode.kind === 'scale') {
+        if (mode.kind === 'wire') {
+          // 配線モードは「途中状態破棄 → モード解除」の 2 段階
+          if (mode.fromSymbolId || mode.waypoints.length > 0) {
+            resetWireProgress();
+          } else {
+            exitMode();
+          }
+          setWireCursorPx(null);
+        } else if (mode.kind === 'place' || mode.kind === 'scale') {
           exitMode();
           setScaleCursorPx(null);
         } else {
@@ -104,7 +133,7 @@ export function CanvasArea(): JSX.Element {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [mode.kind, selectedIds, exitMode, clearSelection, removeSymbols]);
+  }, [mode, selectedIds, exitMode, clearSelection, removeSymbols, resetWireProgress]);
 
   useKeyboardShortcuts({
     getViewportCenter: () =>
@@ -134,6 +163,11 @@ export function CanvasArea(): JSX.Element {
       {mode.kind === 'scale' && (
         <span style={scaleModeBadgeStyle}>
           スケール設定中: {mode.firstPointPx ? '2 点目をクリック' : '1 点目をクリック'} (ESC で解除)
+        </span>
+      )}
+      {mode.kind === 'wire' && (
+        <span style={wireModeBadgeStyle}>
+          配線モード: {!mode.fromSymbolId ? '始点シンボルをクリック' : '中継点クリック / 終点シンボルをクリック'} (ESC で途中解除)
         </span>
       )}
     </p>
@@ -193,6 +227,9 @@ export function CanvasArea(): JSX.Element {
 
     if (mode.kind === 'scale') {
       setScaleCursorPx(point);
+    }
+    if (mode.kind === 'wire') {
+      setWireCursorPx(point);
     }
 
     if (selectionStartRef.current) {
@@ -255,10 +292,30 @@ export function CanvasArea(): JSX.Element {
       } else {
         const distance = distancePx(mode.firstPointPx, point);
         if (distance < 1) {
-          // ほぼ同じ点 → 無視
           return;
         }
         setScaleDialog({ open: true, pixelDistance: distance });
+      }
+      return;
+    }
+
+    if (mode.kind === 'wire') {
+      const symbolId = findSymbolIdFromTarget(e.target);
+      const pointMm = { x: pxToMm(point.x, scaleObj), y: pxToMm(point.y, scaleObj) };
+
+      if (!mode.fromSymbolId) {
+        // 1 点目は必ずシンボル
+        if (symbolId) {
+          setWireFromSymbol(symbolId);
+        }
+        return;
+      }
+      // from 設定済み: シンボルなら配線確定、それ以外なら waypoint 追加
+      if (symbolId && symbolId !== mode.fromSymbolId) {
+        addWire(mode.fromSymbolId, symbolId, mode.waypoints);
+        resetWireProgress(); // 連続配線モード継続
+      } else if (!symbolId) {
+        appendWireWaypoint(pointMm);
       }
       return;
     }
@@ -295,7 +352,7 @@ export function CanvasArea(): JSX.Element {
       ? viewportControls.isPanning()
         ? 'grabbing'
         : 'grab'
-      : mode.kind === 'place' || mode.kind === 'scale'
+      : mode.kind === 'place' || mode.kind === 'scale' || mode.kind === 'wire'
         ? 'crosshair'
         : 'default';
 
@@ -325,7 +382,12 @@ export function CanvasArea(): JSX.Element {
             <KonvaImage image={canvas} />
           </Layer>
           <GridLayer pxPerMm={pxPerMm} canvasWidth={canvas.width} canvasHeight={canvas.height} />
+          <WireLayer pxPerMm={pxPerMm} />
           <SymbolsLayer pxPerMm={pxPerMm} />
+          <WirePreviewLayer
+            pxPerMm={pxPerMm}
+            cursorPx={mode.kind === 'wire' ? wireCursorPx ?? undefined : undefined}
+          />
           <SelectionRectLayer rect={selectionRect} />
           <ScaleOverlayLayer
             active={mode.kind === 'scale'}
@@ -380,6 +442,10 @@ const modeBadgeStyle: React.CSSProperties = {
 const scaleModeBadgeStyle: React.CSSProperties = {
   ...modeBadgeStyle,
   background: '#ff7700',
+};
+const wireModeBadgeStyle: React.CSSProperties = {
+  ...modeBadgeStyle,
+  background: '#ff5500',
 };
 const stageContainerStyle: React.CSSProperties = {
   flex: 1,

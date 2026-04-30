@@ -58,10 +58,26 @@ const ProjectGridConfigSchema = z.object({
   color: z.string().min(1),
 });
 
+const WireTypeSchema = z.enum(['ceiling', 'floor', 'concealed', 'exposed']);
+const CableTypeSchema = z.enum(['VVF1.6×2C', 'VVF2.0×2C', 'VVR', 'CV', 'IV', 'その他']);
+
+const WireSchema = z.object({
+  id: z.string().min(1),
+  fromSymbolId: z.string().min(1),
+  toSymbolId: z.string().min(1),
+  waypoints: z.array(PointSchema),
+  type: WireTypeSchema,
+  cable: CableTypeSchema,
+  cableCustom: z.string().optional(),
+  circuit: z.string(),
+  lengthMm: z.number().nonnegative(),
+});
+
 export const ProjectSchema = z.object({
   meta: ProjectMetaSchema,
   drawing: ProjectDrawingSchema.nullable(),
   symbols: z.array(ProjectSymbolSchema),
+  wires: z.array(WireSchema).optional(),
   grid: ProjectGridConfigSchema.optional(),
 });
 

@@ -88,11 +88,50 @@ export const DEFAULT_GRID_CONFIG: ProjectGridConfig = {
   color: '#cccccc',
 };
 
+/** Phase 2-C: 配線種別 (REQUIREMENTS.md §3.2 F-07) */
+export type WireType = 'ceiling' | 'floor' | 'concealed' | 'exposed';
+
+/** Phase 2-C: ケーブル種別 */
+export type CableType = 'VVF1.6×2C' | 'VVF2.0×2C' | 'VVR' | 'CV' | 'IV' | 'その他';
+
+export const WIRE_TYPE_OPTIONS: { value: WireType; label: string }[] = [
+  { value: 'ceiling', label: '天井ふところ (実線)' },
+  { value: 'floor', label: '床下 (破線)' },
+  { value: 'concealed', label: '壁内隠蔽 (点線)' },
+  { value: 'exposed', label: '露出 (青実線)' },
+];
+
+export const CABLE_TYPE_OPTIONS: CableType[] = [
+  'VVF1.6×2C',
+  'VVF2.0×2C',
+  'VVR',
+  'CV',
+  'IV',
+  'その他',
+];
+
+/** Phase 2-C: 配線データ (REQUIREMENTS.md §5.2) */
+export interface Wire {
+  id: string;
+  fromSymbolId: string;
+  toSymbolId: string;
+  /** 中継点 (mm)、from/to の間の経路 */
+  waypoints: { x: number; y: number }[];
+  type: WireType;
+  cable: CableType;
+  cableCustom?: string | undefined;
+  circuit: string;
+  /** 自動算出される配線長 (mm) */
+  lengthMm: number;
+}
+
 export interface Project {
   meta: ProjectMeta;
   /** PDF 未読込時は null */
   drawing: ProjectDrawing | null;
   symbols: ProjectSymbol[];
+  /** Phase 2-C で追加。後方互換のため optional */
+  wires?: Wire[] | undefined;
   /** Phase 2-A2 で追加。後方互換のため optional (未指定なら DEFAULT_GRID_CONFIG) */
   grid?: ProjectGridConfig;
 }

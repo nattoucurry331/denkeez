@@ -17,14 +17,21 @@ import type {
   ProjectDrawingScale,
   ProjectSymbol,
   PropertyValue,
+  Wire,
 } from './types';
 import { DEFAULT_GRID_CONFIG } from './types';
+import { computeWireLengthMm } from '../utils/wire-geometry';
 
-/** 操作モード。配置モード時は symbolType、スケール設定中は firstPointPx を保持する。 */
+/** 操作モード。配置モード時は symbolType、スケール設定中は firstPointPx、配線モードは fromSymbolId と waypoints を保持する。 */
 export type EditorMode =
   | { kind: 'select' }
   | { kind: 'place'; symbolType: string }
-  | { kind: 'scale'; firstPointPx?: { x: number; y: number } | undefined };
+  | { kind: 'scale'; firstPointPx?: { x: number; y: number } | undefined }
+  | {
+      kind: 'wire';
+      fromSymbolId?: string | undefined;
+      waypoints: { x: number; y: number }[];
+    };
 
 export interface ProjectState {
   project: Project;
@@ -89,6 +96,18 @@ export interface ProjectActions {
   enterScaleMode: () => void;
   setScaleFirstPoint: (pointPx: { x: number; y: number } | undefined) => void;
   setScale: (scale: ProjectDrawingScale | undefined) => void;
+  // Phase 2-C2: 配線
+  enterWireMode: () => void;
+  setWireFromSymbol: (symbolId: string) => void;
+  appendWireWaypoint: (pointMm: { x: number; y: number }) => void;
+  resetWireProgress: () => void;
+  addWire: (
+    fromSymbolId: string,
+    toSymbolId: string,
+    waypoints: { x: number; y: number }[],
+  ) => string;
+  updateWire: (id: string, updates: Partial<Omit<Wire, 'id' | 'lengthMm'>>) => void;
+  removeWires: (ids: readonly string[]) => void;
 }
 
 function createEmptyProject(): Project {
@@ -358,6 +377,110 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         meta: { ...current.meta, updatedAt: nowIso() },
       },
       dirty: true,
+    });
+  },
+
+  // Phase 2-C2: 配線関連 actions
+  enterWireMode: () =>
+    set({
+      mode: { kind: 'wire', waypoints: [] },
+      selectedIds: [],
+    }),
+
+  setWireFromSymbol: (symbolId) => {
+    const current = get().mode;
+    if (current.kind !== 'wire') return;
+    set({
+      mode: { kind: 'wire', fromSymbolId: symbolId, waypoints: [] },
+    });
+  },
+
+  appendWireWaypoint: (pointMm) => {
+    const current = get().mode;
+    if (current.kind !== 'wire' || !current.fromSymbolId) return;
+    set({
+      mode: {
+        kind: 'wire',
+        fromSymbolId: current.fromSymbolId,
+        waypoints: [...current.waypoints, pointMm],
+      },
+    });
+  },
+
+  resetWireProgress: () => {
+    const current = get().mode;
+    if (current.kind !== 'wire') return;
+    set({
+      mode: { kind: 'wire', waypoints: [] },
+    });
+  },
+
+  addWire: (fromSymbolId, toSymbolId, waypoints) => {
+    const current = get().project;
+    const newId = generateId();
+    const lengthMm = computeWireLengthMm(
+      { fromSymbolId, toSymbolId, waypoints },
+      current.symbols,
+    );
+    const wire: Wire = {
+      id: newId,
+      fromSymbolId,
+      toSymbolId,
+      waypoints,
+      type: 'ceiling',
+      cable: 'VVF1.6×2C',
+      circuit: '',
+      lengthMm,
+    };
+    set({
+      project: {
+        ...current,
+        wires: [...(current.wires ?? []), wire],
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+    return newId;
+  },
+
+  updateWire: (id, updates) => {
+    const current = get().project;
+    const wires = current.wires ?? [];
+    set({
+      project: {
+        ...current,
+        wires: wires.map((w) => {
+          if (w.id !== id) return w;
+          const merged = { ...w, ...updates };
+          // waypoints / from / to が変わったら lengthMm 再計算
+          if (
+            updates.waypoints !== undefined ||
+            updates.fromSymbolId !== undefined ||
+            updates.toSymbolId !== undefined
+          ) {
+            merged.lengthMm = computeWireLengthMm(merged, current.symbols);
+          }
+          return merged;
+        }),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  removeWires: (ids) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const current = get().project;
+    const wires = current.wires ?? [];
+    set({
+      project: {
+        ...current,
+        wires: wires.filter((w) => !idSet.has(w.id)),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+      selectedIds: get().selectedIds.filter((sid) => !idSet.has(sid)),
     });
   },
   }),

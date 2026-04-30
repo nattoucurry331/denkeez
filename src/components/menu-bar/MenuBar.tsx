@@ -38,6 +38,7 @@ export function MenuBar(): JSX.Element {
   const enterScaleMode = useProjectStore((s) => s.enterScaleMode);
   const exitMode = useProjectStore((s) => s.exitMode);
   const setScale = useProjectStore((s) => s.setScale);
+  const enterWireMode = useProjectStore((s) => s.enterWireMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -194,6 +195,15 @@ export function MenuBar(): JSX.Element {
         title="図面上の 2 点をクリックして実寸を入力 (F-04)"
       >
         {mode.kind === 'scale' ? '✓ スケール設定中 (ESC で解除)' : 'スケール設定'}
+      </button>
+      <button
+        onClick={() => (mode.kind === 'wire' ? exitMode() : enterWireMode())}
+        disabled={busy || !pdfCanvas}
+        type="button"
+        style={mode.kind === 'wire' ? activeButtonStyle : undefined}
+        title="配線モード: シンボル → 中継点 → シンボル の順にクリック"
+      >
+        {mode.kind === 'wire' ? '✓ 配線モード (ESC で解除)' : '配線'}
       </button>
       {project.drawing?.scale && (
         <button
