@@ -25,6 +25,7 @@ import {
   PdfExportDialog,
   type PdfExportSettings,
 } from '../dialogs/PdfExportDialog';
+import { useUpdaterStore } from '../../data/updater-store';
 
 export function MenuBar(): JSX.Element {
   const project = useProjectStore((s) => s.project);
@@ -50,6 +51,11 @@ export function MenuBar(): JSX.Element {
   const [info, setInfo] = useState<string | null>(null);
   // Phase 2-E3b: PDF 出力ダイアログ
   const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
+
+  // Phase 2-F3: 自動更新通知
+  const updateAvailable = useUpdaterStore((s) => s.available);
+  const updateInfo = useUpdaterStore((s) => s.info);
+  const openUpdateDialog = useUpdaterStore((s) => s.openDialog);
 
   const wrap = async (fn: () => Promise<void>): Promise<void> => {
     setError(null);
@@ -286,6 +292,16 @@ export function MenuBar(): JSX.Element {
           {basename(currentFilePath)}
         </span>
       )}
+      {updateAvailable && updateInfo && (
+        <button
+          type="button"
+          onClick={openUpdateDialog}
+          style={updateBadgeStyle}
+          title={`新しいバージョン ${updateInfo.version} があります — クリックで更新`}
+        >
+          🔔 更新があります (v{updateInfo.version})
+        </button>
+      )}
       {busy && <span style={statusStyle}>処理中…</span>}
       {info && <span style={infoStyle}>{info}</span>}
       {error && (
@@ -350,5 +366,16 @@ const errorStyle: React.CSSProperties = { color: '#c00', fontSize: '0.85rem' };
 const activeButtonStyle: React.CSSProperties = {
   background: '#e0f0ff',
   borderColor: '#0080ff',
+  fontWeight: 'bold',
+};
+const updateBadgeStyle: React.CSSProperties = {
+  marginLeft: 'auto',
+  padding: '4px 10px',
+  background: '#fff8e0',
+  border: '1px solid #f0a000',
+  borderRadius: 16,
+  fontSize: '0.82rem',
+  color: '#5a4400',
+  cursor: 'pointer',
   fontWeight: 'bold',
 };
