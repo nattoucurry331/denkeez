@@ -11,13 +11,20 @@ import { generateId } from '../utils/id';
 import { APP_VERSION, SCHEMA_VERSION } from '../shared/constants/app';
 import { debounce } from '../utils/debounce';
 import type { Rotation } from '../pdf/pdf-loader';
-import type { Project, ProjectDrawing, ProjectSymbol, PropertyValue } from './types';
+import type {
+  Project,
+  ProjectDrawing,
+  ProjectDrawingScale,
+  ProjectSymbol,
+  PropertyValue,
+} from './types';
 import { DEFAULT_GRID_CONFIG } from './types';
 
-/** 操作モード。配置モード時は symbolType を保持する。 */
+/** 操作モード。配置モード時は symbolType、スケール設定中は firstPointPx を保持する。 */
 export type EditorMode =
   | { kind: 'select' }
-  | { kind: 'place'; symbolType: string };
+  | { kind: 'place'; symbolType: string }
+  | { kind: 'scale'; firstPointPx?: { x: number; y: number } | undefined };
 
 export interface ProjectState {
   project: Project;
@@ -77,7 +84,11 @@ export interface ProjectActions {
   exitMode: () => void;
   // Phase 2-A2: グリッド
   toggleGrid: () => void;
-  setGridSpacing: (spacing: 100 | 50) => void;
+  setGridSpacing: (spacing: 910 | 455 | 100 | 50) => void;
+  // Phase 2-C1: スケール設定
+  enterScaleMode: () => void;
+  setScaleFirstPoint: (pointPx: { x: number; y: number } | undefined) => void;
+  setScale: (scale: ProjectDrawingScale | undefined) => void;
 }
 
 function createEmptyProject(): Project {
@@ -320,6 +331,30 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       project: {
         ...current,
         grid: { ...grid, spacingMm: spacing },
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  enterScaleMode: () =>
+    set({
+      mode: { kind: 'scale' },
+      selectedIds: [],
+    }),
+
+  setScaleFirstPoint: (pointPx) =>
+    set({
+      mode: { kind: 'scale', firstPointPx: pointPx },
+    }),
+
+  setScale: (scale) => {
+    const current = get().project;
+    if (!current.drawing) return;
+    set({
+      project: {
+        ...current,
+        drawing: { ...current.drawing, scale },
         meta: { ...current.meta, updatedAt: nowIso() },
       },
       dirty: true,

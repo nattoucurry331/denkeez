@@ -18,6 +18,17 @@ export interface ProjectMeta {
   schemaVersion: number;
 }
 
+/** Phase 2-C1: スケール校正データ (F-04)。
+ * 2 点クリックで「canvas px 距離 ↔ 実寸 mm」のマッピングを保存する。
+ * 設定時は pxPerMm の計算式が「実寸ベース」に切り替わる。
+ */
+export interface ProjectDrawingScale {
+  /** 校正に使った 2 点の canvas px 距離 */
+  pixelDistanceCanvas: number;
+  /** 校正に使った実寸 (mm) */
+  realDistanceMm: number;
+}
+
 export interface ProjectDrawing {
   type: 'pdf';
   filename: string;
@@ -25,6 +36,8 @@ export interface ProjectDrawing {
   /** PDF ページの実寸 (mm) — 内部の座標系はすべて mm で統一 (REQUIREMENTS.md §9.1.1) */
   widthMm: number;
   heightMm: number;
+  /** Phase 2-C: スケール校正 (未設定時は紙面実寸モード) */
+  scale?: ProjectDrawingScale | undefined;
 }
 
 /** Phase 2-B: 主要 20 種の JIS C 0303 シンボル種別 */
@@ -53,25 +66,25 @@ export interface ProjectSymbol {
   properties: Record<string, PropertyValue>;
 }
 
-/** Phase 2-A2: グリッド表示設定 (Project に永続化) */
+/** Phase 2-A2 / 2-C 拡張: グリッド表示設定 (Project に永続化) */
 export interface ProjectGridConfig {
   enabled: boolean;
   /**
    * グリッド間隔 (mm)。
-   * Phase 1 PoC〜2-A では F-04 (スケール設定) 未実装のため、紙面実寸として扱う。
-   * 暫定候補は 100/50mm。Phase 2-C で F-04 実装後に「和室基準 910/455mm = 縮尺込みの施工実寸」へ戻す予定。
+   * Phase 2-C で和室基準 910/455mm を実装。スケール未設定時は 100/50mm が画面上で
+   * 視認しやすいので候補に残す。spacingMm 自体は 4 値の union。
    */
-  spacingMm: 100 | 50;
+  spacingMm: 910 | 455 | 100 | 50;
   /** 線色 (HEX) */
   color: string;
 }
 
-/** UI で選択可能な spacing 候補 (Phase 2-A 暫定) */
-export const GRID_SPACING_OPTIONS: ProjectGridConfig['spacingMm'][] = [100, 50];
+/** UI で選択可能な spacing 候補 */
+export const GRID_SPACING_OPTIONS: ProjectGridConfig['spacingMm'][] = [910, 455, 100, 50];
 
 export const DEFAULT_GRID_CONFIG: ProjectGridConfig = {
   enabled: false,
-  spacingMm: 100,
+  spacingMm: 910,
   color: '#cccccc',
 };
 

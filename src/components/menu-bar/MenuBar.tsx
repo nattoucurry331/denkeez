@@ -27,6 +27,7 @@ export function MenuBar(): JSX.Element {
   const pdfCanvas = useProjectStore((s) => s.pdfCanvas);
   const pdfBuffer = useProjectStore((s) => s.pdfBuffer);
   const pdfRotation = useProjectStore((s) => s.pdfRotation);
+  const mode = useProjectStore((s) => s.mode);
   const loadPdf = useProjectStore((s) => s.loadPdf);
   const loadProject = useProjectStore((s) => s.loadProject);
   const newProject = useProjectStore((s) => s.newProject);
@@ -34,6 +35,9 @@ export function MenuBar(): JSX.Element {
   const setDirty = useProjectStore((s) => s.setDirty);
   const applyPdfRotation = useProjectStore((s) => s.applyPdfRotation);
   const removeSymbols = useProjectStore((s) => s.removeSymbols);
+  const enterScaleMode = useProjectStore((s) => s.enterScaleMode);
+  const exitMode = useProjectStore((s) => s.exitMode);
+  const setScale = useProjectStore((s) => s.setScale);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -183,6 +187,34 @@ export function MenuBar(): JSX.Element {
       </button>
       <span style={separatorStyle}>|</span>
       <button
+        onClick={() => (mode.kind === 'scale' ? exitMode() : enterScaleMode())}
+        disabled={busy || !pdfCanvas}
+        type="button"
+        style={mode.kind === 'scale' ? activeButtonStyle : undefined}
+        title="図面上の 2 点をクリックして実寸を入力 (F-04)"
+      >
+        {mode.kind === 'scale' ? '✓ スケール設定中 (ESC で解除)' : 'スケール設定'}
+      </button>
+      {project.drawing?.scale && (
+        <button
+          onClick={() =>
+            wrap(async () => {
+              const ok = await askConfirm(
+                'スケール校正を解除しますか? 紙面実寸モードに戻ります。',
+                'スケール解除',
+              );
+              if (ok) setScale(undefined);
+            })
+          }
+          disabled={busy}
+          type="button"
+          title="スケール校正を解除して紙面実寸モードに戻す"
+        >
+          スケール解除
+        </button>
+      )}
+      <span style={separatorStyle}>|</span>
+      <button
         onClick={() => setDirty(!dirty)}
         type="button"
         title="dirty フラグを切り替えて未保存終了確認ダイアログをテスト"
@@ -232,3 +264,8 @@ const pathStyle: React.CSSProperties = {
 const statusStyle: React.CSSProperties = { color: '#444', fontSize: '0.85rem' };
 const infoStyle: React.CSSProperties = { color: '#0a7000', fontSize: '0.85rem' };
 const errorStyle: React.CSSProperties = { color: '#c00', fontSize: '0.85rem' };
+const activeButtonStyle: React.CSSProperties = {
+  background: '#e0f0ff',
+  borderColor: '#0080ff',
+  fontWeight: 'bold',
+};

@@ -6,17 +6,39 @@ import { useProjectStore } from '../../data/project-store';
 import { useViewportStore } from '../../data/viewport-store';
 import { DEFAULT_GRID_CONFIG, GRID_SPACING_OPTIONS } from '../../data/types';
 
+function computeScaleRatio(
+  drawing: {
+    widthMm: number;
+    scale?: { pixelDistanceCanvas: number; realDistanceMm: number } | undefined;
+  },
+  canvasWidth: number,
+): number | null {
+  if (!drawing.scale || canvasWidth === 0 || drawing.widthMm === 0) return null;
+  // 図面上 1mm = 紙面 mm/px = drawing.widthMm / canvasWidth
+  // 実寸 1mm = scale.pixelDistanceCanvas / scale.realDistanceMm px
+  // 縮尺 N = 実寸 mm / 紙面 mm
+  const ratio =
+    (drawing.scale.realDistanceMm * canvasWidth) /
+    (drawing.scale.pixelDistanceCanvas * drawing.widthMm);
+  return Math.round(ratio);
+}
+
 export function StatusBar(): JSX.Element {
-  const scale = useViewportStore((s) => s.scale);
+  const viewportScale = useViewportStore((s) => s.scale);
   const cursorMm = useViewportStore((s) => s.cursorMm);
+  const drawing = useProjectStore((s) => s.project.drawing);
+  const pdfCanvas = useProjectStore((s) => s.pdfCanvas);
   const grid = useProjectStore((s) => s.project.grid) ?? DEFAULT_GRID_CONFIG;
   const toggleGrid = useProjectStore((s) => s.toggleGrid);
   const setGridSpacing = useProjectStore((s) => s.setGridSpacing);
 
+  const scaleRatio =
+    drawing && pdfCanvas ? computeScaleRatio(drawing, pdfCanvas.width) : null;
+
   return (
     <footer style={statusBarStyle}>
       <span style={cellStyle}>
-        拡大率: <strong>{Math.round(scale * 100)}%</strong>
+        拡大率: <strong>{Math.round(viewportScale * 100)}%</strong>
       </span>
       <span style={separator}>|</span>
       <span style={cellStyle}>
@@ -24,6 +46,11 @@ export function StatusBar(): JSX.Element {
         <strong>
           {cursorMm ? `${cursorMm.x.toFixed(0)}, ${cursorMm.y.toFixed(0)} mm` : '---'}
         </strong>
+      </span>
+      <span style={separator}>|</span>
+      <span style={cellStyle}>
+        縮尺:{' '}
+        <strong>{scaleRatio !== null ? `1/${scaleRatio}` : '紙面実寸 (校正なし)'}</strong>
       </span>
       <span style={separator}>|</span>
       <label style={cellStyle}>
@@ -37,7 +64,7 @@ export function StatusBar(): JSX.Element {
       </label>
       <select
         value={grid.spacingMm}
-        onChange={(e) => setGridSpacing(Number(e.target.value) as 100 | 50)}
+        onChange={(e) => setGridSpacing(Number(e.target.value) as 910 | 455 | 100 | 50)}
         disabled={!grid.enabled}
         style={selectStyle}
         aria-label="グリッド間隔"

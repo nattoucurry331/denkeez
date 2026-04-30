@@ -13,12 +13,18 @@ const ProjectMetaSchema = z.object({
   schemaVersion: z.number().int().nonnegative(),
 });
 
+const ProjectDrawingScaleSchema = z.object({
+  pixelDistanceCanvas: z.number().positive(),
+  realDistanceMm: z.number().positive(),
+});
+
 const ProjectDrawingSchema = z.object({
   type: z.literal('pdf'),
   filename: z.string(),
   selectedPage: z.number().int().positive(),
   widthMm: z.number().positive(),
   heightMm: z.number().positive(),
+  scale: ProjectDrawingScaleSchema.optional(),
 });
 
 const PointSchema = z.object({
@@ -48,7 +54,7 @@ const ProjectSymbolSchema = z.object({
 
 const ProjectGridConfigSchema = z.object({
   enabled: z.boolean(),
-  spacingMm: z.union([z.literal(100), z.literal(50)]),
+  spacingMm: z.union([z.literal(910), z.literal(455), z.literal(100), z.literal(50)]),
   color: z.string().min(1),
 });
 
