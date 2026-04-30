@@ -1,0 +1,90 @@
+# Phase 2-F4: タグ push → Windows ビルド + Ed25519 署名 + GitHub Release 自動公開。
+#
+# 使い方 (Daisuke 側):
+#   1. version をバンプ:
+#        - package.json
+#        - src-tauri/tauri.conf.json
+#        - src-tauri/Cargo.toml
+#      の 3 ファイルを同じバージョンに揃える (例: 0.2.0)
+#   2. コミット → main に merge
+#   3. タグを切って push:
+#        git tag v0.2.0
+#        git push origin v0.2.0
+#   4. このワークフローが起動 → ビルド → Release 公開 → latest.json 配置
+#
+# 必要な GitHub Secrets:
+#   TAURI_SIGNING_PRIVATE_KEY:           denkeez-updater.key の中身
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD:  鍵にパスワード設定済みなら入力 (今は空でOK)
+#
+# tauri-action は createUpdaterArtifacts=true 時に自動で:
+#   - Windows: .msi + .msi.zip + .msi.zip.sig (Ed25519 署名) を生成
+#   - Release に upload (タグ名で参照)
+#   - latest.json を Release に同梱 (updater 設定の endpoint と整合)
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Release (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Build & Release with tauri-action
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Denkeez ${{ github.ref_name }}'
+          releaseBody: |
+            ## このリリース
+
+            自動生成されたβ版リリースです。詳しい変更内容は [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) または各コミットを参照してください。
+
+            ## インストール
+
+            下記の `Denkeez_*_x64-setup.exe` をダウンロードして実行してください。
+            「WindowsによってPCが保護されました」の警告が出た場合は「詳細情報」→「実行」で進めてください (β版は未署名のため)。
+
+            ## 自動更新
+
+            既に Denkeez を使っている方は、次回起動時にこのバージョンを検出してメニューバーに🔔 通知が出ます。
+          releaseDraft: false
+          prerelease: false
+          # createUpdaterArtifacts は tauri.conf.json で有効化済み
+          # Windows のみビルド (Phase 2 配布対象は Windows のみ)
