@@ -40,6 +40,15 @@
     "publisher": "有限会社 北嶺建設",
     "category": "Productivity",
     "shortDescription": "電気工事の平面図エディタ",
-    "longDescription": "元請けからの平面図 PDF 上に電気設備記号を配置し、配線描画・レイヤー管理・拾い出し集計・PDF/CSV 出力までを一気通貫で支援するデスクトップアプリケーション。"
+    "longDescription": "元請けからの平面図 PDF 上に電気設備記号を配置し、配線描画・レイヤー管理・拾い出し集計・PDF/CSV 出力までを一気通貫で支援するデスクトップアプリケーション。",
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/nattoucurry331/denkeez/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYwRTlCOUFCRTdFOUU0MDkKUldRSjVPbm5xN25wOE9vM1FkamZ2Q2lGM09Gajh0emI1Q3h2WGNMVkJ0QkkvSGNTZDZjNEtrOUsK"
+    }
   }
 }
