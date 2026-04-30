@@ -9,6 +9,7 @@ import {
   selectProjectFileToOpen,
   selectProjectFileToSave,
   selectPdfFileToSave,
+  selectCsvFileToSave,
   readBinaryFile,
   readProjectFile,
   writeProjectFile,
@@ -19,6 +20,11 @@ import {
 } from '../../tauri/api';
 import { serializeProject, deserializeProject } from '../../data/project-io';
 import { exportProjectAsPdf, suggestedExportName } from '../../export/pdf-exporter';
+import { generateBomCsv, suggestedBomCsvName } from '../../export/csv-exporter';
+import {
+  PdfExportDialog,
+  type PdfExportSettings,
+} from '../dialogs/PdfExportDialog';
 
 export function MenuBar(): JSX.Element {
   const project = useProjectStore((s) => s.project);
@@ -42,6 +48,8 @@ export function MenuBar(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  // Phase 2-E3b: PDF 出力ダイアログ
+  const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
 
   const wrap = async (fn: () => Promise<void>): Promise<void> => {
     setError(null);
@@ -119,19 +127,53 @@ export function MenuBar(): JSX.Element {
       markSaved(targetPath);
     });
 
-  const handleExportPdf = (): Promise<void> =>
+  // Phase 2-E3b: 「PDF 出力」ボタン → 設定ダイアログ → 確定 → ファイル保存
+  const handleOpenPdfDialog = (): void => {
+    setError(null);
+    setInfo(null);
+    if (!pdfCanvas || !project.drawing) {
+      setError('先に「ファイル → PDF を開く」で図面を読み込んでください');
+      return;
+    }
+    setPdfDialogOpen(true);
+  };
+
+  const handleConfirmPdfExport = (settings: PdfExportSettings): Promise<void> =>
     wrap(async () => {
+      setPdfDialogOpen(false);
       if (!pdfCanvas || !project.drawing) {
-        throw new Error('先に「ファイル → PDF を開く」で図面を読み込んでください');
+        throw new Error('PDF 背景が読み込まれていません');
       }
       const path = await selectPdfFileToSave(suggestedExportName(project));
       if (!path) return;
       const bytes = exportProjectAsPdf({
         project,
         backgroundCanvas: pdfCanvas,
+        layerIds: settings.layerIds,
+        paperSize: settings.paperSize,
+        orientation: settings.orientation,
       });
       await writeBinaryFile(path, bytes);
       setInfo(`PDF を出力しました: ${basename(path)}`);
+    });
+
+  // Phase 2-E2: 拾い出し CSV 出力 (F-15)。
+  // BomPanel と同じ「可視レイヤーのみ」設定 (localStorage) を踏襲して集計。
+  const handleExportCsv = (): Promise<void> =>
+    wrap(async () => {
+      const visibleOnly = readBomVisibleOnlyFromLocalStorage();
+      const csv = generateBomCsv(
+        project.symbols,
+        project.wires ?? [],
+        project.layers,
+        { visibleOnly },
+      );
+      const path = await selectCsvFileToSave(suggestedBomCsvName(project.meta.name));
+      if (!path) return;
+      // UTF-8 BOM が文字列に含まれているのでバイナリ書き込みでそのまま保存
+      await writeBinaryFile(path, new TextEncoder().encode(csv));
+      const filterDesc = visibleOnly ? '可視レイヤーのみ' : '全レイヤー';
+      setInfo(`拾い出し CSV を出力しました: ${basename(path)} (${filterDesc})`);
     });
 
   const handleRotatePdf = (): Promise<void> =>
@@ -183,8 +225,16 @@ export function MenuBar(): JSX.Element {
       >
         PDF 90° 回転
       </button>
-      <button onClick={handleExportPdf} disabled={busy || !pdfCanvas} type="button">
-        PDF 出力
+      <button onClick={handleOpenPdfDialog} disabled={busy || !pdfCanvas} type="button">
+        PDF 出力…
+      </button>
+      <button
+        onClick={handleExportCsv}
+        disabled={busy}
+        type="button"
+        title="シンボル種別と配線種別ごとに集計し CSV ファイルとして保存 (BomPanel のフィルタ設定を踏襲)"
+      >
+        拾い出し CSV 出力
       </button>
       <span style={separatorStyle}>|</span>
       <button
@@ -243,6 +293,18 @@ export function MenuBar(): JSX.Element {
           エラー: {error}
         </span>
       )}
+      {project.drawing && (
+        <PdfExportDialog
+          open={pdfDialogOpen}
+          layers={project.layers}
+          drawingWidthMm={project.drawing.widthMm}
+          drawingHeightMm={project.drawing.heightMm}
+          onConfirm={(settings) => {
+            void handleConfirmPdfExport(settings);
+          }}
+          onCancel={() => setPdfDialogOpen(false)}
+        />
+      )}
     </header>
   );
 }
@@ -250,6 +312,17 @@ export function MenuBar(): JSX.Element {
 function suggestedName(name: string): string {
   const safe = name.trim() === '' ? 'untitled' : name;
   return `${safe}.dkz`;
+}
+
+// BomPanel と同じキーを参照 (UI 状態の便宜的な永続化)。
+function readBomVisibleOnlyFromLocalStorage(): boolean {
+  try {
+    const v = window.localStorage.getItem('denkeez.bom.visibleOnly');
+    if (v === 'false') return false;
+    return true; // 未設定 / 'true' / その他 → デフォルト ON
+  } catch {
+    return true;
+  }
 }
 
 const menuBarStyle: React.CSSProperties = {

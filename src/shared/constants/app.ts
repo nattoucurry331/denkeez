@@ -10,4 +10,9 @@ export const APP_VERSION = '0.1.0';
 // プロジェクトファイルのスキーマバージョン。
 // REQUIREMENTS.md §5.2 — 後方互換のためファイルに保存し、
 // マイグレーション戦略は Phase 2 で確定する。
-export const SCHEMA_VERSION = 1;
+//
+// バージョン履歴:
+//  1: Phase 1〜2-C  (symbols, wires?, grid?)
+//  2: Phase 2-D1〜  (layers 必須、ProjectSymbol.layerId / Wire.layerId 必須)
+//                   旧 v1 ファイルは project-io.ts のマイグレーションで「未分類」レイヤーに自動割当。
+export const SCHEMA_VERSION = 2;

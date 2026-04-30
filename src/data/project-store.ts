@@ -12,6 +12,7 @@ import { APP_VERSION, SCHEMA_VERSION } from '../shared/constants/app';
 import { debounce } from '../utils/debounce';
 import type { Rotation } from '../pdf/pdf-loader';
 import type {
+  Layer,
   Project,
   ProjectDrawing,
   ProjectDrawingScale,
@@ -21,6 +22,7 @@ import type {
 } from './types';
 import { DEFAULT_GRID_CONFIG } from './types';
 import { computeWireLengthMm } from '../utils/wire-geometry';
+import { createDefaultLayers, pickFirstUserLayerId } from './layer-defaults';
 
 /** 操作モード。配置モード時は symbolType、スケール設定中は firstPointPx、配線モードは fromSymbolId と waypoints を保持する。 */
 export type EditorMode =
@@ -49,6 +51,10 @@ export interface ProjectState {
   mode: EditorMode;
   /** 現在開いているプロジェクトファイルの絶対パス (新規未保存時は null) */
   currentFilePath: string | null;
+  /** Phase 2-D1: 現在アクティブなレイヤー (新規 symbol/wire の所属先)。
+   *  UI state として扱うため zundo の partialize 対象外。
+   *  newProject / loadProject 時に layers から再算出する。 */
+  activeLayerId: string;
 }
 
 export interface ProjectActions {
@@ -108,6 +114,40 @@ export interface ProjectActions {
   ) => string;
   updateWire: (id: string, updates: Partial<Omit<Wire, 'id' | 'lengthMm'>>) => void;
   removeWires: (ids: readonly string[]) => void;
+  // Phase 2-D1: レイヤー管理 (F-08)
+  /** ユーザーレイヤーを末尾に追加。返り値は新規生成された ID */
+  addLayer: (name: string, color: string) => string;
+  /**
+   * レイヤーを削除する。
+   * - 元図面レイヤー (kind: 'background') は削除不可 (throw)
+   * - 最後のユーザーレイヤーは削除不可 (throw)
+   * - mode='delete-contents': 該当レイヤー所属の symbol/wire も同時削除し、
+   *   削除された symbol を参照する wire も連鎖削除 (Phase 2-C4 と同方針)
+   * - mode='move-to-fallback': 該当レイヤーの symbol/wire を fallbackLayerId に移動
+   *   (fallbackLayerId 未指定時は残ったレイヤーの最初のユーザーレイヤーへ)
+   */
+  removeLayer: (
+    id: string,
+    options:
+      | { mode: 'delete-contents' }
+      | { mode: 'move-to-fallback'; fallbackLayerId?: string | undefined },
+  ) => void;
+  /** レイヤーの name / color / visible / locked を部分更新 */
+  updateLayer: (
+    id: string,
+    updates: Partial<Pick<Layer, 'name' | 'color' | 'visible' | 'locked'>>,
+  ) => void;
+  /**
+   * レイヤー順序を一括更新。orderedIds は現在の全レイヤー ID 集合と一致する必要があり、
+   * かつ index 0 は kind: 'background' のレイヤーでなければならない (元図面は常に最下層)。
+   */
+  reorderLayers: (orderedIds: readonly string[]) => void;
+  /** アクティブレイヤー (新規 symbol/wire の所属先) を切替。存在しない ID は無視 */
+  setActiveLayer: (id: string) => void;
+  /** 既存 symbol を別レイヤーへ移動 (PropertyPanel のレイヤー切替用) */
+  moveSymbolsToLayer: (symbolIds: readonly string[], layerId: string) => void;
+  /** 既存 wire を別レイヤーへ移動 */
+  moveWiresToLayer: (wireIds: readonly string[], layerId: string) => void;
 }
 
 function createEmptyProject(): Project {
@@ -122,6 +162,7 @@ function createEmptyProject(): Project {
       schemaVersion: SCHEMA_VERSION,
     },
     drawing: null,
+    layers: createDefaultLayers(),
     symbols: [],
   };
 }
@@ -135,8 +176,10 @@ function nowIso(): string {
 // limit: 50 件まで
 // handleSet: 連続更新 (ドラッグ中の updateSymbolPosition 60件/秒) を 100ms debounce で 1 件に間引く
 export const useProjectStore = create<ProjectState & ProjectActions>()(
-  temporal((set, get) => ({
-  project: createEmptyProject(),
+  temporal((set, get) => {
+  const initialProject = createEmptyProject();
+  return {
+  project: initialProject,
   dirty: false,
   pdfCanvas: null,
   pdfBuffer: null,
@@ -144,10 +187,12 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
   selectedIds: [],
   mode: { kind: 'select' },
   currentFilePath: null,
+  activeLayerId: pickFirstUserLayerId(initialProject.layers),
 
-  newProject: () =>
+  newProject: () => {
+    const project = createEmptyProject();
     set({
-      project: createEmptyProject(),
+      project,
       dirty: false,
       pdfCanvas: null,
       pdfBuffer: null,
@@ -155,7 +200,9 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       selectedIds: [],
       mode: { kind: 'select' },
       currentFilePath: null,
-    }),
+      activeLayerId: pickFirstUserLayerId(project.layers),
+    });
+  },
 
   loadPdf: (filename, drawing, canvas, buffer) => {
     const current = get().project;
@@ -189,6 +236,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       mode: { kind: 'select' },
       dirty: false,
       currentFilePath: filePath,
+      activeLayerId: pickFirstUserLayerId(project.layers),
     }),
 
   applyPdfRotation: (rotation, canvas, widthMm, heightMm) => {
@@ -216,12 +264,17 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
 
   addSymbol: (symbolType, position) => {
     const current = get().project;
+    // activeLayerId が現存しない可能性 (load 後 / undo 後) → fallback
+    const targetLayerId = current.layers.some((l) => l.id === get().activeLayerId)
+      ? get().activeLayerId
+      : pickFirstUserLayerId(current.layers);
     const newSymbol: ProjectSymbol = {
       id: generateId(),
       type: symbolType,
       position,
       rotation: 0,
       properties: {},
+      layerId: targetLayerId,
     };
     set({
       project: {
@@ -440,6 +493,9 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
 
   addWire: (fromSymbolId, toSymbolId, waypoints) => {
     const current = get().project;
+    const targetLayerId = current.layers.some((l) => l.id === get().activeLayerId)
+      ? get().activeLayerId
+      : pickFirstUserLayerId(current.layers);
     const newId = generateId();
     const lengthMm = computeWireLengthMm(
       { fromSymbolId, toSymbolId, waypoints },
@@ -454,6 +510,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       cable: 'VVF1.6×2C',
       circuit: '',
       lengthMm,
+      layerId: targetLayerId,
     };
     set({
       project: {
@@ -506,8 +563,187 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       selectedIds: get().selectedIds.filter((sid) => !idSet.has(sid)),
     });
   },
-  }),
-  {
+
+  // Phase 2-D1: レイヤー管理 (F-08)
+
+  addLayer: (name, color) => {
+    const newLayer: Layer = {
+      id: generateId(),
+      name,
+      color,
+      visible: true,
+      locked: false,
+      kind: 'user',
+    };
+    const current = get().project;
+    set({
+      project: {
+        ...current,
+        layers: [...current.layers, newLayer],
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+    return newLayer.id;
+  },
+
+  removeLayer: (id, options) => {
+    const current = get().project;
+    const target = current.layers.find((l) => l.id === id);
+    if (!target) return;
+    if (target.kind === 'background') {
+      throw new Error('元図面レイヤーは削除できません');
+    }
+    const userLayerCount = current.layers.filter((l) => l.kind === 'user').length;
+    if (userLayerCount <= 1) {
+      throw new Error('ユーザーレイヤーは少なくとも 1 つ必要です');
+    }
+
+    let nextSymbols = current.symbols;
+    let nextWires = current.wires ?? [];
+
+    if (options.mode === 'delete-contents') {
+      // 該当レイヤー所属の symbol を削除し、それを参照する wire も連鎖削除 (Phase 2-C4 同様)
+      const removedSymbolIds = new Set(
+        nextSymbols.filter((s) => s.layerId === id).map((s) => s.id),
+      );
+      nextSymbols = nextSymbols.filter((s) => s.layerId !== id);
+      nextWires = nextWires.filter(
+        (w) =>
+          w.layerId !== id &&
+          !removedSymbolIds.has(w.fromSymbolId) &&
+          !removedSymbolIds.has(w.toSymbolId),
+      );
+    } else {
+      const remaining = current.layers.filter((l) => l.id !== id);
+      const fallbackId =
+        options.fallbackLayerId !== undefined
+          ? options.fallbackLayerId
+          : pickFirstUserLayerId(remaining);
+      const fallbackExists =
+        fallbackId !== id && remaining.some((l) => l.id === fallbackId);
+      if (!fallbackExists) {
+        throw new Error('移動先レイヤーが不正です');
+      }
+      nextSymbols = nextSymbols.map((s) =>
+        s.layerId === id ? { ...s, layerId: fallbackId } : s,
+      );
+      nextWires = nextWires.map((w) =>
+        w.layerId === id ? { ...w, layerId: fallbackId } : w,
+      );
+    }
+
+    const nextLayers = current.layers.filter((l) => l.id !== id);
+    const currentActive = get().activeLayerId;
+    const nextActive =
+      currentActive === id ? pickFirstUserLayerId(nextLayers) : currentActive;
+
+    const remainingSymbolIds = new Set(nextSymbols.map((s) => s.id));
+    const remainingWireIds = new Set(nextWires.map((w) => w.id));
+    const nextSelected = get().selectedIds.filter(
+      (sid) => remainingSymbolIds.has(sid) || remainingWireIds.has(sid),
+    );
+
+    set({
+      project: {
+        ...current,
+        layers: nextLayers,
+        symbols: nextSymbols,
+        wires: nextWires,
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      activeLayerId: nextActive,
+      dirty: true,
+      selectedIds: nextSelected,
+    });
+  },
+
+  updateLayer: (id, updates) => {
+    const current = get().project;
+    if (!current.layers.some((l) => l.id === id)) return;
+    set({
+      project: {
+        ...current,
+        layers: current.layers.map((l) => (l.id === id ? { ...l, ...updates } : l)),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  reorderLayers: (orderedIds) => {
+    const current = get().project;
+    if (orderedIds.length !== current.layers.length) {
+      throw new Error('reorderLayers: ID 数が現在のレイヤー数と一致しません');
+    }
+    const idSet = new Set(orderedIds);
+    if (idSet.size !== orderedIds.length) {
+      throw new Error('reorderLayers: orderedIds に重複があります');
+    }
+    if (current.layers.some((l) => !idSet.has(l.id))) {
+      throw new Error('reorderLayers: orderedIds に存在しないレイヤー ID が含まれます');
+    }
+    const backgroundId = current.layers.find((l) => l.kind === 'background')?.id;
+    if (backgroundId !== undefined && orderedIds[0] !== backgroundId) {
+      throw new Error('元図面レイヤーは常に最下層 (index 0) である必要があります');
+    }
+    const idToLayer = new Map(current.layers.map((l) => [l.id, l]));
+    const nextLayers = orderedIds
+      .map((id) => idToLayer.get(id))
+      .filter((l): l is Layer => l !== undefined);
+    set({
+      project: {
+        ...current,
+        layers: nextLayers,
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  setActiveLayer: (id) => {
+    const current = get().project;
+    if (!current.layers.some((l) => l.id === id)) return;
+    set({ activeLayerId: id });
+  },
+
+  moveSymbolsToLayer: (symbolIds, layerId) => {
+    if (symbolIds.length === 0) return;
+    const current = get().project;
+    if (!current.layers.some((l) => l.id === layerId)) {
+      throw new Error('指定レイヤーが存在しません');
+    }
+    const idSet = new Set(symbolIds);
+    set({
+      project: {
+        ...current,
+        symbols: current.symbols.map((s) => (idSet.has(s.id) ? { ...s, layerId } : s)),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  moveWiresToLayer: (wireIds, layerId) => {
+    if (wireIds.length === 0) return;
+    const current = get().project;
+    if (!current.layers.some((l) => l.id === layerId)) {
+      throw new Error('指定レイヤーが存在しません');
+    }
+    const idSet = new Set(wireIds);
+    set({
+      project: {
+        ...current,
+        wires: (current.wires ?? []).map((w) =>
+          idSet.has(w.id) ? { ...w, layerId } : w,
+        ),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+  };
+  }, {
     partialize: (state) => ({ project: state.project }),
     limit: 50,
     handleSet: (handleSet) => debounce(handleSet, 100),

@@ -11,20 +11,22 @@ import type { SymbolDefinition, SymbolShape } from '../symbols/symbol-registry';
 interface Props {
   shape: SymbolShape;
   scale: Scale;
+  /** 線色 / 文字色 / 塗り潰し色 (solid-circle 時) — 省略時は黒 */
+  strokeColor?: string;
 }
 
-export function SymbolShapeRenderer({ shape, scale }: Props): JSX.Element {
+export function SymbolShapeRenderer({ shape, scale, strokeColor = '#000' }: Props): JSX.Element {
   switch (shape.kind) {
     case 'circle-with-text':
-      return <CircleWithText shape={shape} scale={scale} />;
+      return <CircleWithText shape={shape} scale={scale} strokeColor={strokeColor} />;
     case 'circle-with-cross':
-      return <CircleWithCross shape={shape} scale={scale} />;
+      return <CircleWithCross shape={shape} scale={scale} strokeColor={strokeColor} />;
     case 'square-with-text':
-      return <SquareWithText shape={shape} scale={scale} />;
+      return <SquareWithText shape={shape} scale={scale} strokeColor={strokeColor} />;
     case 'solid-circle-with-text':
-      return <SolidCircleWithText shape={shape} scale={scale} />;
+      return <SolidCircleWithText shape={shape} scale={scale} strokeColor={strokeColor} />;
     case 'half-circle-with-text':
-      return <HalfCircleWithText shape={shape} scale={scale} />;
+      return <HalfCircleWithText shape={shape} scale={scale} strokeColor={strokeColor} />;
   }
 }
 
@@ -57,9 +59,11 @@ export function getShapeBoundingBox(shape: SymbolShape, scale: Scale): {
 function CircleWithText({
   shape,
   scale,
+  strokeColor,
 }: {
   shape: Extract<SymbolShape, { kind: 'circle-with-text' }>;
   scale: Scale;
+  strokeColor: string;
 }): JSX.Element {
   const radius = mmToPx(shape.radiusMm, scale);
   const stroke = Math.max(1, mmToPx(shape.strokeWidthMm, scale));
@@ -67,7 +71,7 @@ function CircleWithText({
   const box = radius * 2;
   return (
     <>
-      <Circle radius={radius} stroke="#000" strokeWidth={stroke} fill="#fff" />
+      <Circle radius={radius} stroke={strokeColor} strokeWidth={stroke} fill="#fff" />
       {shape.text && (
         <Text
           text={shape.text}
@@ -78,6 +82,7 @@ function CircleWithText({
           height={box}
           align="center"
           verticalAlign="middle"
+          fill={strokeColor}
           listening={false}
         />
       )}
@@ -88,9 +93,11 @@ function CircleWithText({
 function CircleWithCross({
   shape,
   scale,
+  strokeColor,
 }: {
   shape: Extract<SymbolShape, { kind: 'circle-with-cross' }>;
   scale: Scale;
+  strokeColor: string;
 }): JSX.Element {
   const radius = mmToPx(shape.radiusMm, scale);
   const stroke = Math.max(1, mmToPx(shape.strokeWidthMm, scale));
@@ -98,9 +105,9 @@ function CircleWithCross({
   const half = radius * Math.SQRT1_2;
   return (
     <>
-      <Circle radius={radius} stroke="#000" strokeWidth={stroke} fill="#fff" />
-      <Line points={[-half, -half, half, half]} stroke="#000" strokeWidth={stroke} listening={false} />
-      <Line points={[-half, half, half, -half]} stroke="#000" strokeWidth={stroke} listening={false} />
+      <Circle radius={radius} stroke={strokeColor} strokeWidth={stroke} fill="#fff" />
+      <Line points={[-half, -half, half, half]} stroke={strokeColor} strokeWidth={stroke} listening={false} />
+      <Line points={[-half, half, half, -half]} stroke={strokeColor} strokeWidth={stroke} listening={false} />
     </>
   );
 }
@@ -108,9 +115,11 @@ function CircleWithCross({
 function SquareWithText({
   shape,
   scale,
+  strokeColor,
 }: {
   shape: Extract<SymbolShape, { kind: 'square-with-text' }>;
   scale: Scale;
+  strokeColor: string;
 }): JSX.Element {
   const w = mmToPx(shape.widthMm, scale);
   const h = mmToPx(shape.heightMm, scale);
@@ -118,7 +127,7 @@ function SquareWithText({
   const fontSize = mmToPx(shape.fontSizeMm, scale);
   return (
     <>
-      <Rect x={-w / 2} y={-h / 2} width={w} height={h} stroke="#000" strokeWidth={stroke} fill="#fff" />
+      <Rect x={-w / 2} y={-h / 2} width={w} height={h} stroke={strokeColor} strokeWidth={stroke} fill="#fff" />
       {shape.text && (
         <Text
           text={shape.text}
@@ -129,6 +138,7 @@ function SquareWithText({
           height={h}
           align="center"
           verticalAlign="middle"
+          fill={strokeColor}
           listening={false}
         />
       )}
@@ -139,16 +149,18 @@ function SquareWithText({
 function SolidCircleWithText({
   shape,
   scale,
+  strokeColor,
 }: {
   shape: Extract<SymbolShape, { kind: 'solid-circle-with-text' }>;
   scale: Scale;
+  strokeColor: string;
 }): JSX.Element {
   const radius = mmToPx(shape.radiusMm, scale);
   const fontSize = mmToPx(shape.fontSizeMm, scale);
   const box = radius * 2;
   return (
     <>
-      <Circle radius={radius} fill="#000" />
+      <Circle radius={radius} fill={strokeColor} />
       {shape.text && (
         <Text
           text={shape.text}
@@ -170,9 +182,11 @@ function SolidCircleWithText({
 function HalfCircleWithText({
   shape,
   scale,
+  strokeColor,
 }: {
   shape: Extract<SymbolShape, { kind: 'half-circle-with-text' }>;
   scale: Scale;
+  strokeColor: string;
 }): JSX.Element {
   const radius = mmToPx(shape.radiusMm, scale);
   const stroke = Math.max(1, mmToPx(shape.strokeWidthMm, scale));
@@ -194,7 +208,7 @@ function HalfCircleWithText({
         outerRadius={radius}
         angle={180}
         rotation={180}
-        stroke="#000"
+        stroke={strokeColor}
         strokeWidth={stroke}
         fill="#fff"
       />
@@ -208,6 +222,7 @@ function HalfCircleWithText({
           height={radius * 0.7}
           align="center"
           verticalAlign="middle"
+          fill={strokeColor}
           listening={false}
         />
       )}
@@ -216,6 +231,16 @@ function HalfCircleWithText({
 }
 
 /** Phase 2-B 単一エクスポート (symbols-layer から呼ぶ) */
-export function renderSymbolShape(def: SymbolDefinition, scale: Scale): JSX.Element {
-  return <SymbolShapeRenderer shape={def.shape} scale={scale} />;
+export function renderSymbolShape(
+  def: SymbolDefinition,
+  scale: Scale,
+  strokeColor?: string,
+): JSX.Element {
+  return (
+    <SymbolShapeRenderer
+      shape={def.shape}
+      scale={scale}
+      {...(strokeColor !== undefined ? { strokeColor } : {})}
+    />
+  );
 }

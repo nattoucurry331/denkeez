@@ -13,22 +13,42 @@ import { useProjectStore } from '../data/project-store';
 import { mmToPx, pxToMm, type Scale } from '../utils/coordinate';
 import { getSymbolDefinition } from '../symbols/symbol-registry';
 import { SymbolShapeRenderer, getShapeBoundingBox } from './symbol-shape';
+import { lockedLayerIds, sortSymbolsByLayerOrder, getLayerColor } from '../data/layer-helpers';
 import type { ProjectSymbol } from '../data/types';
 
 interface Props {
+  /** 位置 (実寸 mm or 紙面 mm) を canvas px に変換するスケール */
   pxPerMm: number;
+  /**
+   * シンボル形状サイズ (radiusMm 等) を canvas px に変換するスケール。
+   * 校正の有無に関わらず常に「紙面 mm → canvas px」(canvas.width / drawing.widthMm)。
+   * JIS C 0303 の慣例で、記号は縮尺に関わらず一定の見やすい大きさで描くため。
+   */
+  paperPxPerMm: number;
 }
 
-export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
+export function SymbolsLayer({ pxPerMm, paperPxPerMm }: Props): JSX.Element {
   const symbols = useProjectStore((s) => s.project.symbols);
+  const layers = useProjectStore((s) => s.project.layers);
   const selectedIds = useProjectStore((s) => s.selectedIds);
+  const mode = useProjectStore((s) => s.mode);
   const updateSymbolPosition = useProjectStore((s) => s.updateSymbolPosition);
   const updateSymbolRotation = useProjectStore((s) => s.updateSymbolRotation);
   const selectSymbols = useProjectStore((s) => s.selectSymbols);
   const toggleSelectSymbol = useProjectStore((s) => s.toggleSelectSymbol);
 
   const scale: Scale = { pxPerMm };
+  const paperScale: Scale = { pxPerMm: paperPxPerMm };
   const selectedSet = new Set(selectedIds);
+  // Phase 2-D2: 非表示レイヤーに所属する symbol は描画しない (F-08)
+  const hiddenLayerIds = new Set(layers.filter((l) => !l.visible).map((l) => l.id));
+  // Phase 2-D3: ロック中レイヤーは draggable: false / クリック無視
+  const lockedIds = lockedLayerIds(layers);
+  // Phase 2-D3: layers 配列順 (= z-index) でソートして描画順を決定 (案 B)
+  const visibleSymbols = sortSymbolsByLayerOrder(
+    symbols.filter((s) => !hiddenLayerIds.has(s.layerId)),
+    layers,
+  );
 
   const transformerRef = useRef<Konva.Transformer>(null);
   const layerRef = useRef<Konva.Layer>(null);
@@ -41,42 +61,60 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
 
     if (selectedIds.length === 1) {
       const id = selectedIds[0];
-      const node = layer.findOne(`#sym-${id}`);
-      if (node) {
-        tr.nodes([node]);
-      } else {
+      // Phase 2-D3: 単一選択でもロック中レイヤーなら Transformer を出さない
+      const sym = symbols.find((s) => s.id === id);
+      const isLocked = sym ? lockedIds.has(sym.layerId) : false;
+      if (isLocked) {
         tr.nodes([]);
+      } else {
+        const node = layer.findOne(`#sym-${id}`);
+        if (node) {
+          tr.nodes([node]);
+        } else {
+          tr.nodes([]);
+        }
       }
     } else {
       tr.nodes([]);
     }
     layer.batchDraw();
-  }, [selectedIds, symbols]);
+  }, [selectedIds, symbols, visibleSymbols.length, lockedIds]);
 
   return (
     <Layer ref={layerRef}>
-      {symbols.map((sym) => (
-        <SymbolNode
-          key={sym.id}
-          symbol={sym}
-          scale={scale}
-          selected={selectedSet.has(sym.id)}
-          onClick={(shiftKey) => {
-            if (shiftKey) {
-              toggleSelectSymbol(sym.id);
-            } else {
-              selectSymbols([sym.id]);
-            }
-          }}
-          onDragEnd={(pxPos) => {
-            updateSymbolPosition(sym.id, {
-              x: pxToMm(pxPos.x, scale),
-              y: pxToMm(pxPos.y, scale),
-            });
-          }}
-          onTransformEnd={(rotation) => updateSymbolRotation(sym.id, rotation)}
-        />
-      ))}
+      {visibleSymbols.map((sym) => {
+        const isLocked = lockedIds.has(sym.layerId);
+        const symbolColor = getLayerColor(sym.layerId, layers);
+        return (
+          <SymbolNode
+            key={sym.id}
+            symbol={sym}
+            scale={scale}
+            paperScale={paperScale}
+            selected={selectedSet.has(sym.id)}
+            locked={isLocked}
+            strokeColor={symbolColor}
+            // 配線モード中はクリックをバブルさせて Stage 側 (CanvasArea.handleStageClick) で
+            // setWireFromSymbol / addWire を処理する。select モードのみ自前で選択する。
+            wireModeActive={mode.kind === 'wire'}
+            onClick={(shiftKey) => {
+              if (isLocked) return;
+              if (shiftKey) {
+                toggleSelectSymbol(sym.id);
+              } else {
+                selectSymbols([sym.id]);
+              }
+            }}
+            onDragEnd={(pxPos) => {
+              updateSymbolPosition(sym.id, {
+                x: pxToMm(pxPos.x, scale),
+                y: pxToMm(pxPos.y, scale),
+              });
+            }}
+            onTransformEnd={(rotation) => updateSymbolRotation(sym.id, rotation)}
+          />
+        );
+      })}
       <Transformer
         ref={transformerRef}
         resizeEnabled={false}
@@ -93,8 +131,21 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
 
 interface SymbolNodeProps {
   symbol: ProjectSymbol;
+  /** 位置を mm → px に変換 */
   scale: Scale;
+  /** シンボル形状サイズを紙面 mm → px に変換 */
+  paperScale: Scale;
   selected: boolean;
+  /** Phase 2-D3: ロック中レイヤー所属。draggable / click を抑止 */
+  locked: boolean;
+  /**
+   * Phase 2-E3 fix: 配線モード中なら true。
+   * true のときはクリックを cancelBubble せず、Stage 側 handleStageClick に届ける
+   * (setWireFromSymbol / addWire は CanvasArea が一元管理しているため)。
+   */
+  wireModeActive: boolean;
+  /** 線色 / 文字色 — 所属レイヤーの color */
+  strokeColor: string;
   onClick: (shiftKey: boolean) => void;
   onDragEnd: (pxPos: { x: number; y: number }) => void;
   onTransformEnd: (rotation: number) => void;
@@ -103,7 +154,11 @@ interface SymbolNodeProps {
 function SymbolNode({
   symbol,
   scale,
+  paperScale,
   selected,
+  locked,
+  wireModeActive,
+  strokeColor,
   onClick,
   onDragEnd,
   onTransformEnd,
@@ -112,15 +167,23 @@ function SymbolNode({
   if (!def) {
     return null;
   }
+  // 位置は実寸 mm 系 (校正済みなら実寸、未校正なら紙面)
   const x = mmToPx(symbol.position.x, scale);
   const y = mmToPx(symbol.position.y, scale);
-  const bbox = getShapeBoundingBox(def.shape, scale);
+  // 形状サイズは常に紙面 mm 系 (記号は縮尺に依存せず一定の見やすさを保つ)
+  const bbox = getShapeBoundingBox(def.shape, paperScale);
 
   const handleClick = (e: KonvaEventObject<MouseEvent>) => {
+    if (wireModeActive) {
+      // Stage の handleStageClick で wire 始点/終点判定するためバブルさせる。
+      // 自前 selectSymbols は呼ばない (配線中に選択状態を変えない)
+      return;
+    }
     e.cancelBubble = true;
     onClick(e.evt.shiftKey);
   };
   const handleTap = (e: KonvaEventObject<TouchEvent>) => {
+    if (wireModeActive) return;
     e.cancelBubble = true;
     onClick(false);
   };
@@ -131,7 +194,9 @@ function SymbolNode({
       x={x}
       y={y}
       rotation={symbol.rotation}
-      draggable
+      // wire モード中はドラッグ起動を抑止 (mousedown→mousemove で onClick が消えるのを避ける)
+      draggable={!locked && !wireModeActive}
+      listening={!locked}
       onClick={handleClick}
       onTap={handleTap}
       onDragEnd={(e) => onDragEnd({ x: e.target.x(), y: e.target.y() })}
@@ -144,7 +209,7 @@ function SymbolNode({
         onTransformEnd(rot);
       }}
     >
-      <SymbolShapeRenderer shape={def.shape} scale={scale} />
+      <SymbolShapeRenderer shape={def.shape} scale={paperScale} strokeColor={strokeColor} />
       {selected && (
         <Rect
           x={-bbox.width / 2 - 3}
