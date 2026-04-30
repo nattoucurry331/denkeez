@@ -27,6 +27,20 @@ const PT_PER_INCH = 72;
 /** mm → pt 変換 (jsPDF の setFontSize は pt 指定) */
 const MM_TO_PT = PT_PER_INCH / MM_PER_INCH;
 
+/** Phase 2-E3b: F-14 用紙サイズ選択肢。'auto' は図面実寸をそのまま用紙化。 */
+export type PaperSize = 'auto' | 'A4' | 'A3' | 'A2' | 'A1';
+
+/** Phase 2-E3b: 'auto' は drawing.widthMm/heightMm の縦横比から自動判定。 */
+export type PageOrientation = 'auto' | 'portrait' | 'landscape';
+
+/** A 系用紙の短辺 × 長辺 (mm)。portrait なら 短辺 × 長辺、landscape は逆。 */
+const A_SIZES: Record<Exclude<PaperSize, 'auto'>, { short: number; long: number }> = {
+  A4: { short: 210, long: 297 },
+  A3: { short: 297, long: 420 },
+  A2: { short: 420, long: 594 },
+  A1: { short: 594, long: 841 },
+};
+
 export interface ExportOptions {
   project: Project;
   /** PDF 背景レンダリング結果。pdfCanvas を渡す。 */
@@ -37,6 +51,10 @@ export interface ExportOptions {
    * 元図面レイヤー (BACKGROUND_LAYER_ID) が含まれていれば PDF 背景画像も貼付する。
    */
   layerIds?: readonly string[];
+  /** Phase 2-E3b: 用紙サイズ。未指定は 'auto' (図面実寸)。 */
+  paperSize?: PaperSize;
+  /** Phase 2-E3b: 用紙の向き。未指定は 'auto' (図面の縦横比から判定)。 */
+  orientation?: PageOrientation;
 }
 
 /**
@@ -54,18 +72,25 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
   // Phase 2-E3a: 出力対象レイヤー集合を確定
   const allowedLayers = resolveAllowedLayers(project.layers, options.layerIds);
 
-  // jsPDF の format は [短辺, 長辺] (mm)、orientation で配置が決まる
-  const orientation: 'portrait' | 'landscape' =
-    drawing.widthMm >= drawing.heightMm ? 'landscape' : 'portrait';
-  const longSide = Math.max(drawing.widthMm, drawing.heightMm);
-  const shortSide = Math.min(drawing.widthMm, drawing.heightMm);
+  // Phase 2-E3b: 用紙サイズ・向き・scale-to-fit 計算
+  const layout = computePageLayout(
+    drawing.widthMm,
+    drawing.heightMm,
+    options.paperSize ?? 'auto',
+    options.orientation ?? 'auto',
+  );
 
   const pdf = new jsPDF({
-    orientation,
+    orientation: layout.pageOrientation,
     unit: 'mm',
-    format: [shortSide, longSide],
+    format: [layout.pageShortMm, layout.pageLongMm],
     compress: true,
   });
+
+  // 描画原点 (offsetX, offsetY) と倍率 (scale) を全描画に適用するヘルパ
+  const tx = (mmX: number): number => mmX * layout.scale + layout.offsetX;
+  const ty = (mmY: number): number => mmY * layout.scale + layout.offsetY;
+  const ts = (mm: number): number => mm * layout.scale;
 
   // 背景 (PNG dataURL を PDF に貼付) — 元図面レイヤーが対象に含まれている場合のみ
   if (allowedLayers.has(BACKGROUND_LAYER_ID)) {
@@ -73,10 +98,10 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
     pdf.addImage(
       backgroundDataUrl,
       'PNG',
-      0,
-      0,
-      drawing.widthMm,
-      drawing.heightMm,
+      layout.offsetX,
+      layout.offsetY,
+      drawing.widthMm * layout.scale,
+      drawing.heightMm * layout.scale,
       undefined,
       'FAST',
     );
@@ -90,16 +115,90 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
   );
 
   // 配線をシンボルより先に描画 (画面表示と同じ z 順を維持)
-  drawWires(pdf, visibleWires, project.symbols);
+  drawWires(pdf, visibleWires, project.symbols, layout.scale, tx, ty);
 
   for (const symbol of visibleSymbols) {
     const def = getSymbolDefinition(symbol.type);
     if (!def) continue;
-    drawSymbol(pdf, symbol, def.shape);
+    drawSymbol(pdf, symbol, def.shape, layout.scale, tx, ty, ts);
   }
 
   const buffer = pdf.output('arraybuffer');
   return new Uint8Array(buffer);
+}
+
+/**
+ * Phase 2-E3b: 用紙レイアウト (用紙サイズ + 向き + scale-to-fit + 中央寄せ) を算出する。
+ * テストのため export する。
+ */
+export interface PageLayout {
+  /** jsPDF に渡す向き */
+  pageOrientation: 'portrait' | 'landscape';
+  /** 用紙の短辺 (mm) — jsPDF format[0] */
+  pageShortMm: number;
+  /** 用紙の長辺 (mm) — jsPDF format[1] */
+  pageLongMm: number;
+  /** 配置時の用紙幅 (mm)、orientation 適用後 */
+  pageWidthMm: number;
+  /** 配置時の用紙高さ (mm)、orientation 適用後 */
+  pageHeightMm: number;
+  /** 図面実寸 → 用紙実寸への scale 倍率 (paperSize='auto' なら常に 1) */
+  scale: number;
+  /** 用紙原点からの図面左上オフセット (mm)、中央寄せのため */
+  offsetX: number;
+  /** 用紙原点からの図面左上オフセット (mm) */
+  offsetY: number;
+}
+
+export function computePageLayout(
+  drawingWidthMm: number,
+  drawingHeightMm: number,
+  paperSize: PaperSize,
+  orientation: PageOrientation,
+): PageLayout {
+  // 1. 向きを決定
+  const isLandscape =
+    orientation === 'landscape'
+      ? true
+      : orientation === 'portrait'
+        ? false
+        : drawingWidthMm >= drawingHeightMm; // 'auto'
+
+  // 2. 用紙の短辺・長辺
+  let pageShortMm: number;
+  let pageLongMm: number;
+  if (paperSize === 'auto') {
+    // 図面実寸そのまま
+    pageShortMm = Math.min(drawingWidthMm, drawingHeightMm);
+    pageLongMm = Math.max(drawingWidthMm, drawingHeightMm);
+  } else {
+    pageShortMm = A_SIZES[paperSize].short;
+    pageLongMm = A_SIZES[paperSize].long;
+  }
+
+  // 3. orientation 適用後の用紙寸法
+  const pageWidthMm = isLandscape ? pageLongMm : pageShortMm;
+  const pageHeightMm = isLandscape ? pageShortMm : pageLongMm;
+
+  // 4. scale-to-fit (paperSize='auto' は drawing == page なので scale=1 になるはず)
+  const scaleX = pageWidthMm / drawingWidthMm;
+  const scaleY = pageHeightMm / drawingHeightMm;
+  const scale = Math.min(scaleX, scaleY);
+
+  // 5. 中央寄せのオフセット
+  const offsetX = (pageWidthMm - drawingWidthMm * scale) / 2;
+  const offsetY = (pageHeightMm - drawingHeightMm * scale) / 2;
+
+  return {
+    pageOrientation: isLandscape ? 'landscape' : 'portrait',
+    pageShortMm,
+    pageLongMm,
+    pageWidthMm,
+    pageHeightMm,
+    scale,
+    offsetX,
+    offsetY,
+  };
 }
 
 /**
@@ -173,8 +272,12 @@ function drawWires(
   pdf: jsPDF,
   wires: readonly Wire[],
   symbols: readonly ProjectSymbol[],
+  scale: number,
+  tx: (mm: number) => number,
+  ty: (mm: number) => number,
 ): void {
-  pdf.setLineWidth(0.35); // 0.35mm ≈ 1pt 相当の見やすい配線太さ
+  // Phase 2-E3b: scale-to-fit に応じて線幅・dash パターンも縮小
+  pdf.setLineWidth(0.35 * scale);
 
   for (const wire of wires) {
     const points = getWirePoints(wire, symbols);
@@ -183,7 +286,10 @@ function drawWires(
     const style = styleForWireType(wire.type);
     pdf.setDrawColor(style.color[0], style.color[1], style.color[2]);
     if (style.dash) {
-      pdf.setLineDashPattern(style.dash, 0);
+      pdf.setLineDashPattern(
+        style.dash.map((d) => d * scale),
+        0,
+      );
     } else {
       pdf.setLineDashPattern([], 0);
     }
@@ -191,7 +297,7 @@ function drawWires(
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i]!;
       const b = points[i + 1]!;
-      pdf.line(a.x, a.y, b.x, b.y);
+      pdf.line(tx(a.x), ty(a.y), tx(b.x), ty(b.y));
     }
   }
 
@@ -209,52 +315,64 @@ export function getWirePdfStyle(type: WireType): WireStyle {
 // シンボル描画 (Phase 2-B / Phase 2-E3a で half-circle 正式対応)
 // -----------------------------------------------------------------------------
 
-function drawSymbol(pdf: jsPDF, symbol: ProjectSymbol, shape: SymbolShape): void {
-  const { x, y } = symbol.position;
+function drawSymbol(
+  pdf: jsPDF,
+  symbol: ProjectSymbol,
+  shape: SymbolShape,
+  scale: number,
+  tx: (mm: number) => number,
+  ty: (mm: number) => number,
+  ts: (mm: number) => number,
+): void {
+  const cx = tx(symbol.position.x);
+  const cy = ty(symbol.position.y);
 
   pdf.setDrawColor(0, 0, 0);
   pdf.setFillColor(255, 255, 255);
   pdf.setTextColor(0, 0, 0);
 
   if (shape.kind === 'circle-with-text') {
-    pdf.setLineWidth(shape.strokeWidthMm);
-    pdf.circle(x, y, shape.radiusMm, 'FD');
+    pdf.setLineWidth(shape.strokeWidthMm * scale);
+    pdf.circle(cx, cy, ts(shape.radiusMm), 'FD');
     if (shape.text) {
-      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT);
-      pdf.text(shape.text, x, y, { align: 'center', baseline: 'middle' });
+      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * scale);
+      pdf.text(shape.text, cx, cy, { align: 'center', baseline: 'middle' });
     }
   } else if (shape.kind === 'solid-circle-with-text') {
     pdf.setFillColor(0, 0, 0);
-    pdf.circle(x, y, shape.radiusMm, 'F');
+    pdf.circle(cx, cy, ts(shape.radiusMm), 'F');
     if (shape.text) {
       pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT);
-      pdf.text(shape.text, x, y, { align: 'center', baseline: 'middle' });
+      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * scale);
+      pdf.text(shape.text, cx, cy, { align: 'center', baseline: 'middle' });
     }
   } else if (shape.kind === 'square-with-text') {
-    pdf.setLineWidth(shape.strokeWidthMm);
-    pdf.rect(x - shape.widthMm / 2, y - shape.heightMm / 2, shape.widthMm, shape.heightMm, 'FD');
+    pdf.setLineWidth(shape.strokeWidthMm * scale);
+    const w = ts(shape.widthMm);
+    const h = ts(shape.heightMm);
+    pdf.rect(cx - w / 2, cy - h / 2, w, h, 'FD');
     if (shape.text) {
-      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT);
-      pdf.text(shape.text, x, y, { align: 'center', baseline: 'middle' });
+      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * scale);
+      pdf.text(shape.text, cx, cy, { align: 'center', baseline: 'middle' });
     }
   } else if (shape.kind === 'circle-with-cross') {
-    pdf.setLineWidth(shape.strokeWidthMm);
-    pdf.circle(x, y, shape.radiusMm, 'FD');
+    pdf.setLineWidth(shape.strokeWidthMm * scale);
+    const r = ts(shape.radiusMm);
+    pdf.circle(cx, cy, r, 'FD');
     // 内接 × (45° 方向、長さ = radius * sqrt(2))
-    const half = shape.radiusMm * Math.SQRT1_2;
-    pdf.line(x - half, y - half, x + half, y + half);
-    pdf.line(x - half, y + half, x + half, y - half);
+    const half = r * Math.SQRT1_2;
+    pdf.line(cx - half, cy - half, cx + half, cy + half);
+    pdf.line(cx - half, cy + half, cx + half, cy - half);
   } else if (shape.kind === 'half-circle-with-text') {
     // Phase 2-E3a: 上半円 (∩ 形) を ベジェ近似で正式描画。
-    // 単位円の上半分はベジェ 4 制御点で十分近似可能。
-    // 中心 (x, y) から半径 r、左端 (-r, 0)、右端 (+r, 0)、頂点 (0, -r) を結ぶ ∩ 形。
-    pdf.setLineWidth(shape.strokeWidthMm);
-    drawHalfCircle(pdf, x, y, shape.radiusMm);
+    pdf.setLineWidth(shape.strokeWidthMm * scale);
+    drawHalfCircle(pdf, cx, cy, ts(shape.radiusMm));
     if (shape.text) {
-      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT);
-      // テキストは半円の中央寄り (y を半分上に)
-      pdf.text(shape.text, x, y - shape.radiusMm * 0.4, { align: 'center', baseline: 'middle' });
+      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * scale);
+      pdf.text(shape.text, cx, cy - ts(shape.radiusMm) * 0.4, {
+        align: 'center',
+        baseline: 'middle',
+      });
     }
   }
 }

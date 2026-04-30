@@ -4,6 +4,7 @@ import {
   resolveAllowedLayers,
   filterRenderableEntities,
   getWirePdfStyle,
+  computePageLayout,
 } from '../src/export/pdf-exporter';
 import type {
   Layer,
@@ -179,6 +180,69 @@ describe('filterRenderableEntities (Phase 2-E3a)', () => {
     );
     expect(outSym).toHaveLength(2);
     expect(outWire).toHaveLength(1);
+  });
+});
+
+describe('computePageLayout (Phase 2-E3b)', () => {
+  it("paperSize='auto' + orientation='auto': 図面実寸そのまま、scale=1、offset=0", () => {
+    const layout = computePageLayout(297, 420, 'auto', 'auto');
+    expect(layout.pageWidthMm).toBe(297);
+    expect(layout.pageHeightMm).toBe(420);
+    expect(layout.scale).toBeCloseTo(1, 6);
+    expect(layout.offsetX).toBeCloseTo(0, 6);
+    expect(layout.offsetY).toBeCloseTo(0, 6);
+    expect(layout.pageOrientation).toBe('portrait');
+  });
+
+  it("paperSize='auto' で横長図面 → orientation='auto' は landscape", () => {
+    const layout = computePageLayout(420, 297, 'auto', 'auto');
+    expect(layout.pageOrientation).toBe('landscape');
+    expect(layout.pageWidthMm).toBe(420);
+    expect(layout.pageHeightMm).toBe(297);
+  });
+
+  it("paperSize='A4' portrait + 図面 A3 → A4 にフィットする scale", () => {
+    // A3 図面 (297×420) を A4 portrait (210×297) に収める
+    const layout = computePageLayout(297, 420, 'A4', 'portrait');
+    expect(layout.pageWidthMm).toBe(210);
+    expect(layout.pageHeightMm).toBe(297);
+    // scale = min(210/297, 297/420) = min(0.70707, 0.70714) = 210/297
+    expect(layout.scale).toBeCloseTo(210 / 297, 4);
+  });
+
+  it("paperSize='A1' landscape + 図面 A4 → 拡大 (scale > 1)", () => {
+    // A4 図面 (210×297) を A1 landscape (841×594) に収める
+    const layout = computePageLayout(210, 297, 'A1', 'landscape');
+    expect(layout.pageWidthMm).toBe(841);
+    expect(layout.pageHeightMm).toBe(594);
+    // scale = min(841/210, 594/297) = min(4.0, 2.0) = 2.0
+    expect(layout.scale).toBeCloseTo(2.0, 4);
+  });
+
+  it('縦横比違いで中央寄せ offset が発生', () => {
+    // 200×100 の図面 (アスペクト 2:1) を 100×100 の用紙に
+    // scale = min(100/200, 100/100) = 0.5
+    // 図面実寸 100×50、用紙 100×100、offsetY = (100 - 50) / 2 = 25
+    const layout = computePageLayout(200, 100, 'auto', 'portrait');
+    // auto + portrait なら paperShort=100, paperLong=200 で portrait → 100x200
+    expect(layout.pageWidthMm).toBe(100);
+    expect(layout.pageHeightMm).toBe(200);
+    expect(layout.scale).toBeCloseTo(0.5, 4);
+    expect(layout.offsetX).toBeCloseTo(0, 4);
+    expect(layout.offsetY).toBeCloseTo((200 - 100 * 0.5) / 2, 4);
+  });
+
+  it("orientation='auto' は drawing 比で判断 (正方形は landscape 扱い)", () => {
+    expect(computePageLayout(100, 100, 'A4', 'auto').pageOrientation).toBe('landscape');
+    expect(computePageLayout(100, 200, 'A4', 'auto').pageOrientation).toBe('portrait');
+    expect(computePageLayout(200, 100, 'A4', 'auto').pageOrientation).toBe('landscape');
+  });
+
+  it('A 系サイズの正規化: 短辺・長辺は固定値', () => {
+    expect(computePageLayout(100, 100, 'A4', 'portrait').pageShortMm).toBe(210);
+    expect(computePageLayout(100, 100, 'A4', 'portrait').pageLongMm).toBe(297);
+    expect(computePageLayout(100, 100, 'A1', 'portrait').pageShortMm).toBe(594);
+    expect(computePageLayout(100, 100, 'A1', 'portrait').pageLongMm).toBe(841);
   });
 });
 

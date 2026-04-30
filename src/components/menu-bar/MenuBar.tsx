@@ -21,6 +21,10 @@ import {
 import { serializeProject, deserializeProject } from '../../data/project-io';
 import { exportProjectAsPdf, suggestedExportName } from '../../export/pdf-exporter';
 import { generateBomCsv, suggestedBomCsvName } from '../../export/csv-exporter';
+import {
+  PdfExportDialog,
+  type PdfExportSettings,
+} from '../dialogs/PdfExportDialog';
 
 export function MenuBar(): JSX.Element {
   const project = useProjectStore((s) => s.project);
@@ -44,6 +48,8 @@ export function MenuBar(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  // Phase 2-E3b: PDF 出力ダイアログ
+  const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
 
   const wrap = async (fn: () => Promise<void>): Promise<void> => {
     setError(null);
@@ -121,16 +127,31 @@ export function MenuBar(): JSX.Element {
       markSaved(targetPath);
     });
 
-  const handleExportPdf = (): Promise<void> =>
+  // Phase 2-E3b: 「PDF 出力」ボタン → 設定ダイアログ → 確定 → ファイル保存
+  const handleOpenPdfDialog = (): void => {
+    setError(null);
+    setInfo(null);
+    if (!pdfCanvas || !project.drawing) {
+      setError('先に「ファイル → PDF を開く」で図面を読み込んでください');
+      return;
+    }
+    setPdfDialogOpen(true);
+  };
+
+  const handleConfirmPdfExport = (settings: PdfExportSettings): Promise<void> =>
     wrap(async () => {
+      setPdfDialogOpen(false);
       if (!pdfCanvas || !project.drawing) {
-        throw new Error('先に「ファイル → PDF を開く」で図面を読み込んでください');
+        throw new Error('PDF 背景が読み込まれていません');
       }
       const path = await selectPdfFileToSave(suggestedExportName(project));
       if (!path) return;
       const bytes = exportProjectAsPdf({
         project,
         backgroundCanvas: pdfCanvas,
+        layerIds: settings.layerIds,
+        paperSize: settings.paperSize,
+        orientation: settings.orientation,
       });
       await writeBinaryFile(path, bytes);
       setInfo(`PDF を出力しました: ${basename(path)}`);
@@ -204,8 +225,8 @@ export function MenuBar(): JSX.Element {
       >
         PDF 90° 回転
       </button>
-      <button onClick={handleExportPdf} disabled={busy || !pdfCanvas} type="button">
-        PDF 出力
+      <button onClick={handleOpenPdfDialog} disabled={busy || !pdfCanvas} type="button">
+        PDF 出力…
       </button>
       <button
         onClick={handleExportCsv}
@@ -271,6 +292,18 @@ export function MenuBar(): JSX.Element {
         <span style={errorStyle} role="alert">
           エラー: {error}
         </span>
+      )}
+      {project.drawing && (
+        <PdfExportDialog
+          open={pdfDialogOpen}
+          layers={project.layers}
+          drawingWidthMm={project.drawing.widthMm}
+          drawingHeightMm={project.drawing.heightMm}
+          onConfirm={(settings) => {
+            void handleConfirmPdfExport(settings);
+          }}
+          onCancel={() => setPdfDialogOpen(false)}
+        />
       )}
     </header>
   );
