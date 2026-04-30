@@ -24,6 +24,7 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
   const symbols = useProjectStore((s) => s.project.symbols);
   const layers = useProjectStore((s) => s.project.layers);
   const selectedIds = useProjectStore((s) => s.selectedIds);
+  const mode = useProjectStore((s) => s.mode);
   const updateSymbolPosition = useProjectStore((s) => s.updateSymbolPosition);
   const updateSymbolRotation = useProjectStore((s) => s.updateSymbolRotation);
   const selectSymbols = useProjectStore((s) => s.selectSymbols);
@@ -82,6 +83,9 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
             scale={scale}
             selected={selectedSet.has(sym.id)}
             locked={isLocked}
+            // 配線モード中はクリックをバブルさせて Stage 側 (CanvasArea.handleStageClick) で
+            // setWireFromSymbol / addWire を処理する。select モードのみ自前で選択する。
+            wireModeActive={mode.kind === 'wire'}
             onClick={(shiftKey) => {
               if (isLocked) return;
               if (shiftKey) {
@@ -120,6 +124,12 @@ interface SymbolNodeProps {
   selected: boolean;
   /** Phase 2-D3: ロック中レイヤー所属。draggable / click を抑止 */
   locked: boolean;
+  /**
+   * Phase 2-E3 fix: 配線モード中なら true。
+   * true のときはクリックを cancelBubble せず、Stage 側 handleStageClick に届ける
+   * (setWireFromSymbol / addWire は CanvasArea が一元管理しているため)。
+   */
+  wireModeActive: boolean;
   onClick: (shiftKey: boolean) => void;
   onDragEnd: (pxPos: { x: number; y: number }) => void;
   onTransformEnd: (rotation: number) => void;
@@ -130,6 +140,7 @@ function SymbolNode({
   scale,
   selected,
   locked,
+  wireModeActive,
   onClick,
   onDragEnd,
   onTransformEnd,
@@ -143,10 +154,16 @@ function SymbolNode({
   const bbox = getShapeBoundingBox(def.shape, scale);
 
   const handleClick = (e: KonvaEventObject<MouseEvent>) => {
+    if (wireModeActive) {
+      // Stage の handleStageClick で wire 始点/終点判定するためバブルさせる。
+      // 自前 selectSymbols は呼ばない (配線中に選択状態を変えない)
+      return;
+    }
     e.cancelBubble = true;
     onClick(e.evt.shiftKey);
   };
   const handleTap = (e: KonvaEventObject<TouchEvent>) => {
+    if (wireModeActive) return;
     e.cancelBubble = true;
     onClick(false);
   };
@@ -157,7 +174,8 @@ function SymbolNode({
       x={x}
       y={y}
       rotation={symbol.rotation}
-      draggable={!locked}
+      // wire モード中はドラッグ起動を抑止 (mousedown→mousemove で onClick が消えるのを避ける)
+      draggable={!locked && !wireModeActive}
       listening={!locked}
       onClick={handleClick}
       onTap={handleTap}

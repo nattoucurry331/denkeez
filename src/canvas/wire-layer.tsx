@@ -37,9 +37,11 @@ export function WireLayer({ pxPerMm }: Props): JSX.Element {
   const wires = useProjectStore((s) => s.project.wires) ?? [];
   const symbols = useProjectStore((s) => s.project.symbols);
   const layers = useProjectStore((s) => s.project.layers);
+  const mode = useProjectStore((s) => s.mode);
   const selectedIds = useProjectStore((s) => s.selectedIds);
   const selectSymbols = useProjectStore((s) => s.selectSymbols);
   const toggleSelectSymbol = useProjectStore((s) => s.toggleSelectSymbol);
+  const wireModeActive = mode.kind === 'wire';
 
   const scale: Scale = { pxPerMm };
   const selectedSet = new Set(selectedIds);
@@ -70,6 +72,11 @@ export function WireLayer({ pxPerMm }: Props): JSX.Element {
 
         const handleClick = (e: KonvaEventObject<MouseEvent>) => {
           if (locked) return;
+          if (wireModeActive) {
+            // wire モード中は Stage 側 (handleStageClick) で waypoint 追加 / 終点判定。
+            // 既存配線への click は何もしない (バブルさせて Stage に判断を委ねる)。
+            return;
+          }
           e.cancelBubble = true;
           if (e.evt.shiftKey) {
             toggleSelectSymbol(wire.id);
