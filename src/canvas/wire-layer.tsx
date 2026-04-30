@@ -8,28 +8,24 @@ import type { KonvaEventObject } from 'konva/lib/Node';
 import { useProjectStore } from '../data/project-store';
 import { mmToPx, type Scale } from '../utils/coordinate';
 import { getWirePoints } from '../utils/wire-geometry';
-import { lockedLayerIds, sortWiresByLayerOrder } from '../data/layer-helpers';
+import { lockedLayerIds, sortWiresByLayerOrder, getLayerColor } from '../data/layer-helpers';
 import type { Wire, WireType } from '../data/types';
 
 interface Props {
   pxPerMm: number;
 }
 
-interface WireStyle {
-  stroke: string;
-  dash?: number[] | undefined;
-}
-
-function styleFor(type: WireType): WireStyle {
+/** 配線種別ごとの dash パターン (Phase 2-E4 でレイヤー色一本化、stroke 色は layer.color から決まる)。 */
+function dashFor(type: WireType): number[] | undefined {
   switch (type) {
     case 'ceiling':
-      return { stroke: '#000' };
+      return undefined; // 実線
     case 'floor':
-      return { stroke: '#000', dash: [10, 5] };
+      return [10, 5]; // 破線
     case 'concealed':
-      return { stroke: '#000', dash: [3, 3] };
+      return [3, 3]; // 点線
     case 'exposed':
-      return { stroke: '#0066cc' };
+      return undefined; // 実線 (色はレイヤーに従う)
   }
 }
 
@@ -66,7 +62,8 @@ export function WireLayer({ pxPerMm }: Props): JSX.Element {
         const points = getWirePoints(wire, symbols);
         if (!points || points.length < 2) return null;
         const flat = points.flatMap((p) => [mmToPx(p.x, scale), mmToPx(p.y, scale)]);
-        const style = styleFor(wire.type);
+        const dash = dashFor(wire.type);
+        const stroke = getLayerColor(wire.layerId, layers);
         const selected = selectedSet.has(wire.id);
         const locked = lockedIds.has(wire.layerId);
 
@@ -90,7 +87,8 @@ export function WireLayer({ pxPerMm }: Props): JSX.Element {
             key={wire.id}
             wire={wire}
             flat={flat}
-            style={style}
+            stroke={stroke}
+            dash={dash}
             selected={selected}
             locked={locked}
             onClick={handleClick}
@@ -104,14 +102,15 @@ export function WireLayer({ pxPerMm }: Props): JSX.Element {
 interface RendererProps {
   wire: Wire;
   flat: number[];
-  style: WireStyle;
+  stroke: string;
+  dash: number[] | undefined;
   selected: boolean;
   /** Phase 2-D3: ロック中レイヤー所属。クリックを無視して下層へ通す */
   locked: boolean;
   onClick: (e: KonvaEventObject<MouseEvent>) => void;
 }
 
-function WireRenderer({ flat, style, selected, locked, onClick }: RendererProps): JSX.Element {
+function WireRenderer({ flat, stroke, dash, selected, locked, onClick }: RendererProps): JSX.Element {
   return (
     <>
       {/* 選択時のハイライト下線 (太い半透明青) */}
@@ -127,14 +126,14 @@ function WireRenderer({ flat, style, selected, locked, onClick }: RendererProps)
       )}
       <Line
         points={flat}
-        stroke={style.stroke}
+        stroke={stroke}
         strokeWidth={1.5}
         hitStrokeWidth={10}
         listening={!locked}
         onClick={onClick}
         onTap={onClick}
         perfectDrawEnabled={false}
-        {...(style.dash !== undefined ? { dash: style.dash } : {})}
+        {...(dash !== undefined ? { dash } : {})}
       />
     </>
   );

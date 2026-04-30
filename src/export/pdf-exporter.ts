@@ -21,6 +21,7 @@ import type { Layer, Project, ProjectSymbol, Wire, WireType } from '../data/type
 import { BACKGROUND_LAYER_ID } from '../data/types';
 import { getSymbolDefinition, type SymbolShape } from '../symbols/symbol-registry';
 import { getWirePoints } from '../utils/wire-geometry';
+import { getLayerColor } from '../data/layer-helpers';
 
 const MM_PER_INCH = 25.4;
 const PT_PER_INCH = 72;
@@ -115,12 +116,13 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
   );
 
   // 配線をシンボルより先に描画 (画面表示と同じ z 順を維持)
-  drawWires(pdf, visibleWires, project.symbols, layout.scale, tx, ty);
+  drawWires(pdf, visibleWires, project.symbols, project.layers, layout.scale, tx, ty);
 
   for (const symbol of visibleSymbols) {
     const def = getSymbolDefinition(symbol.type);
     if (!def) continue;
-    drawSymbol(pdf, symbol, def.shape, layout.scale, tx, ty, ts);
+    const color = getLayerColor(symbol.layerId, project.layers);
+    drawSymbol(pdf, symbol, def.shape, color, layout.scale, tx, ty, ts);
   }
 
   const buffer = pdf.output('arraybuffer');
@@ -243,27 +245,26 @@ export function filterRenderableEntities(
 }
 
 // -----------------------------------------------------------------------------
-// 配線描画 (Phase 2-E3a 新規)
+// 配線描画 (Phase 2-E3a / Phase 2-E4 で色をレイヤー由来に変更)
 // -----------------------------------------------------------------------------
 
-/** 配線種別ごとの PDF 描画スタイル (テストで参照するため export)。 */
+/** 配線種別ごとの PDF 描画スタイル (テストで参照するため export)。
+ *  Phase 2-E4: 色は layer.color に統一。ここでは dash パターンのみ持つ。 */
 export interface WireStyle {
-  /** [r, g, b] (0-255) */
-  color: [number, number, number];
   /** 破線/点線パターン (mm)、未指定なら実線 */
   dash?: number[];
 }
 
-function styleForWireType(type: WireType): WireStyle {
+function dashForWireType(type: WireType): number[] | undefined {
   switch (type) {
     case 'ceiling':
-      return { color: [0, 0, 0] };
+      return undefined; // 実線
     case 'floor':
-      return { color: [0, 0, 0], dash: [2.5, 1.5] }; // 破線
+      return [2.5, 1.5]; // 破線
     case 'concealed':
-      return { color: [0, 0, 0], dash: [0.7, 0.7] }; // 点線
+      return [0.7, 0.7]; // 点線
     case 'exposed':
-      return { color: [0, 102, 204] }; // 青実線
+      return undefined; // 実線 (色はレイヤーに従う)
   }
 }
 
@@ -272,6 +273,7 @@ function drawWires(
   pdf: jsPDF,
   wires: readonly Wire[],
   symbols: readonly ProjectSymbol[],
+  layers: readonly Layer[],
   scale: number,
   tx: (mm: number) => number,
   ty: (mm: number) => number,
@@ -283,11 +285,11 @@ function drawWires(
     const points = getWirePoints(wire, symbols);
     if (!points || points.length < 2) continue;
 
-    const style = styleForWireType(wire.type);
-    pdf.setDrawColor(style.color[0], style.color[1], style.color[2]);
-    if (style.dash) {
+    pdf.setDrawColor(getLayerColor(wire.layerId, layers));
+    const dash = dashForWireType(wire.type);
+    if (dash) {
       pdf.setLineDashPattern(
-        style.dash.map((d) => d * scale),
+        dash.map((d) => d * scale),
         0,
       );
     } else {
@@ -301,14 +303,15 @@ function drawWires(
     }
   }
 
-  // 後続のシンボル描画に dash 設定が漏れないよう実線にリセット
+  // 後続のシンボル描画に dash / 色設定が漏れないようリセット
   pdf.setLineDashPattern([], 0);
   pdf.setDrawColor(0, 0, 0);
 }
 
 /** 配線種別ごとの PDF 描画スタイル。テストのため export する。 */
 export function getWirePdfStyle(type: WireType): WireStyle {
-  return styleForWireType(type);
+  const dash = dashForWireType(type);
+  return dash !== undefined ? { dash } : {};
 }
 
 // -----------------------------------------------------------------------------
@@ -319,6 +322,7 @@ function drawSymbol(
   pdf: jsPDF,
   symbol: ProjectSymbol,
   shape: SymbolShape,
+  strokeColor: string,
   scale: number,
   tx: (mm: number) => number,
   ty: (mm: number) => number,
@@ -327,9 +331,9 @@ function drawSymbol(
   const cx = tx(symbol.position.x);
   const cy = ty(symbol.position.y);
 
-  pdf.setDrawColor(0, 0, 0);
+  pdf.setDrawColor(strokeColor);
   pdf.setFillColor(255, 255, 255);
-  pdf.setTextColor(0, 0, 0);
+  pdf.setTextColor(strokeColor);
 
   if (shape.kind === 'circle-with-text') {
     pdf.setLineWidth(shape.strokeWidthMm * scale);
@@ -339,7 +343,7 @@ function drawSymbol(
       pdf.text(shape.text, cx, cy, { align: 'center', baseline: 'middle' });
     }
   } else if (shape.kind === 'solid-circle-with-text') {
-    pdf.setFillColor(0, 0, 0);
+    pdf.setFillColor(strokeColor);
     pdf.circle(cx, cy, ts(shape.radiusMm), 'F');
     if (shape.text) {
       pdf.setTextColor(255, 255, 255);

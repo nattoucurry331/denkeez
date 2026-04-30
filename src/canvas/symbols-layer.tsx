@@ -13,7 +13,7 @@ import { useProjectStore } from '../data/project-store';
 import { mmToPx, pxToMm, type Scale } from '../utils/coordinate';
 import { getSymbolDefinition } from '../symbols/symbol-registry';
 import { SymbolShapeRenderer, getShapeBoundingBox } from './symbol-shape';
-import { lockedLayerIds, sortSymbolsByLayerOrder } from '../data/layer-helpers';
+import { lockedLayerIds, sortSymbolsByLayerOrder, getLayerColor } from '../data/layer-helpers';
 import type { ProjectSymbol } from '../data/types';
 
 interface Props {
@@ -76,6 +76,7 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
     <Layer ref={layerRef}>
       {visibleSymbols.map((sym) => {
         const isLocked = lockedIds.has(sym.layerId);
+        const symbolColor = getLayerColor(sym.layerId, layers);
         return (
           <SymbolNode
             key={sym.id}
@@ -83,6 +84,7 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
             scale={scale}
             selected={selectedSet.has(sym.id)}
             locked={isLocked}
+            strokeColor={symbolColor}
             // 配線モード中はクリックをバブルさせて Stage 側 (CanvasArea.handleStageClick) で
             // setWireFromSymbol / addWire を処理する。select モードのみ自前で選択する。
             wireModeActive={mode.kind === 'wire'}
@@ -130,6 +132,8 @@ interface SymbolNodeProps {
    * (setWireFromSymbol / addWire は CanvasArea が一元管理しているため)。
    */
   wireModeActive: boolean;
+  /** 線色 / 文字色 — 所属レイヤーの color */
+  strokeColor: string;
   onClick: (shiftKey: boolean) => void;
   onDragEnd: (pxPos: { x: number; y: number }) => void;
   onTransformEnd: (rotation: number) => void;
@@ -141,6 +145,7 @@ function SymbolNode({
   selected,
   locked,
   wireModeActive,
+  strokeColor,
   onClick,
   onDragEnd,
   onTransformEnd,
@@ -189,7 +194,7 @@ function SymbolNode({
         onTransformEnd(rot);
       }}
     >
-      <SymbolShapeRenderer shape={def.shape} scale={scale} />
+      <SymbolShapeRenderer shape={def.shape} scale={scale} strokeColor={strokeColor} />
       {selected && (
         <Rect
           x={-bbox.width / 2 - 3}

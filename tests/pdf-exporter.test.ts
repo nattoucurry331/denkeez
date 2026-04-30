@@ -246,30 +246,27 @@ describe('computePageLayout (Phase 2-E3b)', () => {
   });
 });
 
-describe('getWirePdfStyle (Phase 2-E3a)', () => {
-  it('ceiling: 黒実線', () => {
+describe('getWirePdfStyle (Phase 2-E3a / Phase 2-E4)', () => {
+  it('ceiling: 実線 (dash なし)', () => {
     const s = getWirePdfStyle('ceiling');
-    expect(s.color).toEqual([0, 0, 0]);
     expect(s.dash).toBeUndefined();
   });
 
-  it('floor: 黒破線', () => {
+  it('floor: 破線', () => {
     const s = getWirePdfStyle('floor');
-    expect(s.color).toEqual([0, 0, 0]);
     expect(s.dash).toBeDefined();
     expect(s.dash!.length).toBe(2);
   });
 
-  it('concealed: 黒点線 (dash パターンが floor より細かい)', () => {
+  it('concealed: 点線 (floor より細かい dash)', () => {
     const concealed = getWirePdfStyle('concealed');
     const floor = getWirePdfStyle('floor');
     expect(concealed.dash).toBeDefined();
     expect(concealed.dash![0]).toBeLessThan(floor.dash![0]!);
   });
 
-  it('exposed: 青実線', () => {
+  it('exposed: 実線 (Phase 2-E4 で青固定廃止、色はレイヤー由来)', () => {
     const s = getWirePdfStyle('exposed');
-    expect(s.color[2]).toBeGreaterThan(s.color[0]); // R < B
     expect(s.dash).toBeUndefined();
   });
 });

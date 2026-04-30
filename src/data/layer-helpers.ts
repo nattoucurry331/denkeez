@@ -70,6 +70,21 @@ export function filterEditableSymbolIds(
     .map((s) => s.id);
 }
 
+/**
+ * layerId に対応するレイヤーの色を返す。
+ * 該当 layer が無いか color が空文字なら fallback を返す。
+ * シンボル線色・配線色を「所属レイヤー色」で塗るときに使う。
+ */
+export function getLayerColor(
+  layerId: string,
+  layers: readonly Layer[],
+  fallback = '#000000',
+): string {
+  const layer = layers.find((l) => l.id === layerId);
+  const c = layer?.color?.trim();
+  return c && c.length > 0 ? c : fallback;
+}
+
 /** symbols + wires から ID を引いて編集可能なものだけ残す (Delete 用) */
 export function filterEditableEntityIds(
   ids: readonly string[],

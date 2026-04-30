@@ -6,6 +6,7 @@ import {
   sortWiresByLayerOrder,
   filterEditableSymbolIds,
   filterEditableEntityIds,
+  getLayerColor,
 } from '../src/data/layer-helpers';
 import type { Layer, ProjectSymbol, Wire } from '../src/data/types';
 
@@ -64,6 +65,31 @@ describe('lockedLayerIds', () => {
   it('全レイヤー unlocked なら空 Set', () => {
     const layers = [makeLayer('a'), makeLayer('b')];
     expect(lockedLayerIds(layers).size).toBe(0);
+  });
+});
+
+describe('getLayerColor (Phase 2-E4)', () => {
+  const layers = [
+    makeLayer('a', { color: '#ff0000' }),
+    makeLayer('b', { color: '#00ff00' }),
+    makeLayer('empty', { color: '' }),
+  ];
+
+  it('該当レイヤーの color を返す', () => {
+    expect(getLayerColor('a', layers)).toBe('#ff0000');
+    expect(getLayerColor('b', layers)).toBe('#00ff00');
+  });
+
+  it('該当レイヤーが無いと fallback (デフォルト #000000)', () => {
+    expect(getLayerColor('nonexistent', layers)).toBe('#000000');
+  });
+
+  it('該当レイヤーが無いとき fallback を渡せる', () => {
+    expect(getLayerColor('nonexistent', layers, '#888888')).toBe('#888888');
+  });
+
+  it('color が空文字なら fallback', () => {
+    expect(getLayerColor('empty', layers, '#cccccc')).toBe('#cccccc');
   });
 });
 
