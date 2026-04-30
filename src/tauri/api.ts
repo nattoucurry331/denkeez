@@ -59,6 +59,15 @@ export async function selectPdfFileToSave(defaultName?: string): Promise<string 
   return path;
 }
 
+/** 拾い出し CSV 出力先選択ダイアログ (Phase 2-E2 / F-15)。 */
+export async function selectCsvFileToSave(defaultName?: string): Promise<string | null> {
+  const path = await save({
+    filters: [{ name: 'CSV', extensions: ['csv'] }],
+    defaultPath: defaultName ?? 'denkeez-bom.csv',
+  });
+  return path;
+}
+
 /** ファイルパスからバイナリを読み込み ArrayBuffer として返す。 */
 export async function readBinaryFile(path: string): Promise<ArrayBuffer> {
   const bytes = await readFile(path);
