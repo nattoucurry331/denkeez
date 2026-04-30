@@ -40,6 +40,6 @@
     "publisher": "有限会社 北嶺建設",
     "category": "Productivity",
     "shortDescription": "電気工事の平面図エディタ",
-    "longDescription": "元請けからの平面図 PDF 上に電気設備記号を配置し、拾い出しから見積連携までを一気通貫で支援するデスクトップアプリケーション (Phase 1 PoC)"
+    "longDescription": "元請けからの平面図 PDF 上に電気設備記号を配置し、配線描画・レイヤー管理・拾い出し集計・PDF/CSV 出力までを一気通貫で支援するデスクトップアプリケーション。"
   }
 }
