@@ -58,6 +58,23 @@ export function useKeyboardShortcuts(options: Options): void {
         return;
       }
 
+      // 矢印キー: 選択シンボルを移動 (1mm / Shift+10mm) — Phase 2-B3
+      if (!ctrl && (
+        e.key === 'ArrowUp' || e.key === 'ArrowDown' ||
+        e.key === 'ArrowLeft' || e.key === 'ArrowRight'
+      )) {
+        const selectedIds = useProjectStore.getState().selectedIds;
+        if (selectedIds.length === 0) return;
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        const dx =
+          e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy =
+          e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+        useProjectStore.getState().moveSymbols(selectedIds, { x: dx, y: dy });
+        return;
+      }
+
       // G: グリッド ON/OFF / Shift+G: spacing 切替 (現状 100 ↔ 50)
       if (!ctrl && (e.key === 'g' || e.key === 'G')) {
         e.preventDefault();
