@@ -150,6 +150,46 @@ describe('project-store symbol CRUD', () => {
     });
   });
 
+  describe('updateSymbolRotation / moveSymbols / updateSymbolProperties (Phase 2-B)', () => {
+    it('updateSymbolRotation で rotation 更新 + dirty=true', () => {
+      useProjectStore.getState().addSymbol('downlight', { x: 0, y: 0 });
+      useProjectStore.getState().markSaved();
+      const id = useProjectStore.getState().project.symbols[0]!.id;
+      useProjectStore.getState().updateSymbolRotation(id, 90);
+      expect(useProjectStore.getState().project.symbols[0]?.rotation).toBe(90);
+      expect(isDirty()).toBe(true);
+    });
+
+    it('moveSymbols で複数 ID の position に delta 加算 + dirty=true', () => {
+      useProjectStore.getState().addSymbol('downlight', { x: 0, y: 0 });
+      useProjectStore.getState().addSymbol('downlight', { x: 100, y: 100 });
+      const ids = useProjectStore.getState().project.symbols.map((s) => s.id);
+      useProjectStore.getState().markSaved();
+      useProjectStore.getState().moveSymbols(ids, { x: 5, y: -3 });
+      const after = useProjectStore.getState().project.symbols;
+      expect(after[0]?.position).toEqual({ x: 5, y: -3 });
+      expect(after[1]?.position).toEqual({ x: 105, y: 97 });
+      expect(isDirty()).toBe(true);
+    });
+
+    it('updateSymbolProperties で properties 更新 + dirty=true', () => {
+      useProjectStore.getState().addSymbol('downlight', { x: 0, y: 0 });
+      const id = useProjectStore.getState().project.symbols[0]!.id;
+      useProjectStore.getState().markSaved();
+      useProjectStore.getState().updateSymbolProperties(id, { circuit: 'L-1', wattage: 60 });
+      const sym = useProjectStore.getState().project.symbols[0];
+      expect(sym?.properties.circuit).toBe('L-1');
+      expect(sym?.properties.wattage).toBe(60);
+      expect(isDirty()).toBe(true);
+    });
+
+    it('moveSymbols 空配列は何もしない', () => {
+      useProjectStore.getState().markSaved();
+      useProjectStore.getState().moveSymbols([], { x: 5, y: 0 });
+      expect(isDirty()).toBe(false);
+    });
+  });
+
   describe('zundo undo / redo (Phase 2-A4)', () => {
     beforeEach(() => {
       useProjectStore.temporal.getState().clear();

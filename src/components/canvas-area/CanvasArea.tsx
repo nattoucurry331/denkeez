@@ -2,6 +2,7 @@
 // PDF を背景レイヤーに、シンボルを上位レイヤーに描画する。
 // Phase 2-A1: ビューポートのズーム / パン (Stage の scale + offset、ViewportControls 経由)。
 // Phase 2-A2: GridLayer 統合 + cursorMm 発信 (StatusBar 表示用)。
+// Phase 2-B4: 矩形選択 (ドラッグで複数シンボル選択)。
 
 import { useEffect, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage } from 'react-konva';
@@ -9,12 +10,18 @@ import type { KonvaEventObject } from 'konva/lib/Node';
 import type Konva from 'konva';
 import { useProjectStore } from '../../data/project-store';
 import { useViewportStore } from '../../data/viewport-store';
+import type { SymbolType } from '../../data/types';
 import { useViewportControls } from '../../canvas/viewport-controls';
 import { SymbolsLayer } from '../../canvas/symbols-layer';
 import { GridLayer } from '../../canvas/grid-layer';
 import { Minimap } from '../../canvas/minimap';
+import {
+  SelectionRectLayer,
+  type SelectionRect,
+} from '../../canvas/selection-rect-layer';
 import { useKeyboardShortcuts } from '../../hooks/use-keyboard-shortcuts';
-import { pxToMm } from '../../utils/coordinate';
+import { pxToMm, mmToPx } from '../../utils/coordinate';
+import { getSymbolDefinition } from '../../symbols/symbol-registry';
 
 export function CanvasArea(): JSX.Element {
   const drawing = useProjectStore((s) => s.project.drawing);
@@ -26,6 +33,7 @@ export function CanvasArea(): JSX.Element {
   const removeSymbols = useProjectStore((s) => s.removeSymbols);
   const exitMode = useProjectStore((s) => s.exitMode);
   const clearSelection = useProjectStore((s) => s.clearSelection);
+  const selectSymbols = useProjectStore((s) => s.selectSymbols);
 
   const scale = useViewportStore((s) => s.scale);
   const offsetX = useViewportStore((s) => s.offsetX);
@@ -39,8 +47,11 @@ export function CanvasArea(): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerSize, setContainerSize] = useState({ w: 800, h: 600 });
 
-  // drawing が設定されてから containerRef が ref を取れるので、
-  // depends に drawing を入れて PDF 読込後に effect が走るようにする
+  // 矩形選択中の rect (canvas 論理座標 = scale 補正後)
+  const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
+  // ドラッグ開始位置を記録 (空白から開始したか判定)
+  const selectionStartRef = useRef<SelectionRect | null>(null);
+
   useEffect(() => {
     if (!drawing) return;
     const el = containerRef.current;
@@ -53,9 +64,6 @@ export function CanvasArea(): JSX.Element {
     return () => ro.disconnect();
   }, [drawing]);
 
-  // PDF 読込ごとに 1 回だけ fitToWindow を呼ぶ (canvas reference の変化で判定)。
-  // containerSize が初期値 0 のときは確定するまで待つ。
-  // ウィンドウリサイズの度には fit しない (ユーザーのズーム位置を維持)。
   const fittedCanvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     if (!canvas) {
@@ -87,7 +95,6 @@ export function CanvasArea(): JSX.Element {
     return () => window.removeEventListener('keydown', handler);
   }, [mode.kind, selectedIds, exitMode, clearSelection, removeSymbols]);
 
-  // グローバル KB ショートカット (Ctrl+Z/Y/+/-/0/G) — Phase 2-A4
   useKeyboardShortcuts({
     getViewportCenter: () =>
       containerSize.w > 0 && containerSize.h > 0
@@ -136,8 +143,24 @@ export function CanvasArea(): JSX.Element {
   const pxPerMm = canvas.width / drawing.widthMm;
   const scaleObj = { pxPerMm };
 
+  const isStageBackground = (e: KonvaEventObject<MouseEvent>): boolean => {
+    const target = e.target;
+    const stage = target.getStage();
+    if (!stage) return false;
+    return target === stage || target.getClassName() === 'Image';
+  };
+
   const handleStageMouseDown = (e: KonvaEventObject<MouseEvent>) => {
     viewportControls.onMouseDown(e);
+    // パン中・配置モード中は矩形選択を無効
+    if (spaceDown || mode.kind !== 'select') return;
+    if (!isStageBackground(e)) return;
+    const stage = e.target.getStage();
+    const point = stage?.getRelativePointerPosition();
+    if (!point) return;
+    const rect: SelectionRect = { startX: point.x, startY: point.y, endX: point.x, endY: point.y };
+    selectionStartRef.current = rect;
+    setSelectionRect(rect);
   };
 
   const handleStageMouseMove = (e: KonvaEventObject<MouseEvent>) => {
@@ -149,25 +172,68 @@ export function CanvasArea(): JSX.Element {
       setCursorMm(null);
       return;
     }
-    setCursorMm({
-      x: pxToMm(point.x, scaleObj),
-      y: pxToMm(point.y, scaleObj),
-    });
+    setCursorMm({ x: pxToMm(point.x, scaleObj), y: pxToMm(point.y, scaleObj) });
+
+    // 矩形選択中なら end を更新
+    if (selectionStartRef.current) {
+      setSelectionRect({
+        startX: selectionStartRef.current.startX,
+        startY: selectionStartRef.current.startY,
+        endX: point.x,
+        endY: point.y,
+      });
+    }
+  };
+
+  const handleStageMouseUp = (e: KonvaEventObject<MouseEvent>) => {
+    viewportControls.onMouseUp(e);
+    // 矩形選択終了
+    const rect = selectionStartRef.current;
+    if (rect && selectionRect) {
+      const minX = Math.min(selectionRect.startX, selectionRect.endX);
+      const maxX = Math.max(selectionRect.startX, selectionRect.endX);
+      const minY = Math.min(selectionRect.startY, selectionRect.endY);
+      const maxY = Math.max(selectionRect.startY, selectionRect.endY);
+      const width = maxX - minX;
+      const height = maxY - minY;
+
+      // ほぼ無移動 (クリック扱い) なら矩形選択しない
+      if (width > 3 || height > 3) {
+        const insideIds: string[] = [];
+        for (const sym of symbols) {
+          const def = getSymbolDefinition(sym.type);
+          if (!def) continue;
+          // シンボルの中心 (canvas px) を計算
+          const cx = mmToPx(sym.position.x, scaleObj);
+          const cy = mmToPx(sym.position.y, scaleObj);
+          if (cx >= minX && cx <= maxX && cy >= minY && cy <= maxY) {
+            insideIds.push(sym.id);
+          }
+        }
+        selectSymbols(insideIds);
+      }
+      selectionStartRef.current = null;
+      setSelectionRect(null);
+    }
   };
 
   const handleStageMouseLeave = () => {
     setCursorMm(null);
+    selectionStartRef.current = null;
+    setSelectionRect(null);
     viewportControls.onMouseUp({} as KonvaEventObject<MouseEvent>);
   };
 
   const handleStageClick = (e: KonvaEventObject<MouseEvent>) => {
     if (spaceDown) return;
+    // 矩形選択が動作した直後はクリック扱いしない
+    if (selectionRect) return;
     const stage = e.target.getStage();
     if (!stage) return;
     const point = stage.getRelativePointerPosition();
     if (!point) return;
     if (mode.kind === 'place') {
-      addSymbol(mode.symbolType as 'downlight', {
+      addSymbol(mode.symbolType as SymbolType, {
         x: pxToMm(point.x, scaleObj),
         y: pxToMm(point.y, scaleObj),
       });
@@ -201,7 +267,7 @@ export function CanvasArea(): JSX.Element {
           onWheel={viewportControls.onWheel}
           onMouseDown={handleStageMouseDown}
           onMouseMove={handleStageMouseMove}
-          onMouseUp={viewportControls.onMouseUp}
+          onMouseUp={handleStageMouseUp}
           onMouseLeave={handleStageMouseLeave}
           onClick={handleStageClick}
           onTap={handleStageClick}
@@ -212,6 +278,7 @@ export function CanvasArea(): JSX.Element {
           </Layer>
           <GridLayer pxPerMm={pxPerMm} canvasWidth={canvas.width} canvasHeight={canvas.height} />
           <SymbolsLayer pxPerMm={pxPerMm} />
+          <SelectionRectLayer rect={selectionRect} />
         </Stage>
       </div>
     </div>
@@ -256,7 +323,7 @@ const stageContainerStyle: React.CSSProperties = {
   border: '1px solid #ccc',
   overflow: 'hidden',
   background: '#f8f8f8',
-  position: 'relative', // Minimap を絶対配置するため
+  position: 'relative',
 };
 const warnBoxStyle: React.CSSProperties = {
   padding: '16px 20px',

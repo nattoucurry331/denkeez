@@ -26,13 +26,24 @@ const PointSchema = z.object({
   y: z.number().finite(),
 });
 
+// Phase 2-B: 20 種の SymbolType を厳格に検証
+const SymbolTypeSchema = z.enum([
+  'general-light', 'downlight', 'fluorescent', 'ceiling-light',
+  'pull-cord-ceiling', 'pendant-light',
+  'switch-1pole', 'switch-3way', 'switch-4way', 'switch-dimmer', 'switch-auto',
+  'outlet-general', 'outlet-waterproof', 'outlet-ground', 'outlet-200v',
+  'tv-outlet', 'lan-outlet', 'phone-outlet',
+  'ventilation-fan', 'smoke-detector',
+]);
+
+const PropertyValueSchema = z.union([z.string(), z.number().finite(), z.boolean()]);
+
 const ProjectSymbolSchema = z.object({
   id: z.string().min(1),
-  // PoC では downlight のみだが、Phase 2 で追加するため string で受ける
-  type: z.string().min(1),
+  type: SymbolTypeSchema,
   position: PointSchema,
   rotation: z.number().finite(),
-  properties: z.record(z.string(), z.unknown()),
+  properties: z.record(z.string(), PropertyValueSchema),
 });
 
 const ProjectGridConfigSchema = z.object({

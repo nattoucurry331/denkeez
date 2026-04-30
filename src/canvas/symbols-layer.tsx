@@ -1,12 +1,18 @@
-// Konva 上のシンボル描画レイヤー (Plan §3)。
+// Konva 上のシンボル描画レイヤー (Plan §3 / Phase 2-B 拡張)。
 // 各シンボルは Group 単位で配置・選択・ドラッグ移動を担当する。
-// 座標は store 上 mm、描画時に utils/coordinate で px に変換する (REQUIREMENTS.md §9.1.1)。
+// 座標は store 上 mm、描画時に utils/coordinate で px に変換 (REQUIREMENTS.md §9.1.1)。
+//
+// Phase 2-B1: shape kind 5 種に対応するため、描画ロジックを symbol-shape.tsx に委譲。
+// Phase 2-B3: 単一選択シンボルに Konva Transformer (回転ハンドルのみ) を attach。
 
-import { Layer, Group, Circle, Text, Rect } from 'react-konva';
+import { useEffect, useRef } from 'react';
+import { Layer, Group, Rect, Transformer } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
+import type Konva from 'konva';
 import { useProjectStore } from '../data/project-store';
 import { mmToPx, pxToMm, type Scale } from '../utils/coordinate';
 import { getSymbolDefinition } from '../symbols/symbol-registry';
+import { SymbolShapeRenderer, getShapeBoundingBox } from './symbol-shape';
 import type { ProjectSymbol } from '../data/types';
 
 interface Props {
@@ -17,14 +23,38 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
   const symbols = useProjectStore((s) => s.project.symbols);
   const selectedIds = useProjectStore((s) => s.selectedIds);
   const updateSymbolPosition = useProjectStore((s) => s.updateSymbolPosition);
+  const updateSymbolRotation = useProjectStore((s) => s.updateSymbolRotation);
   const selectSymbols = useProjectStore((s) => s.selectSymbols);
   const toggleSelectSymbol = useProjectStore((s) => s.toggleSelectSymbol);
 
   const scale: Scale = { pxPerMm };
   const selectedSet = new Set(selectedIds);
 
+  const transformerRef = useRef<Konva.Transformer>(null);
+  const layerRef = useRef<Konva.Layer>(null);
+
+  // 単一選択時のみ Transformer を attach (Phase 2-B 仕様 / R-B9)
+  useEffect(() => {
+    const tr = transformerRef.current;
+    const layer = layerRef.current;
+    if (!tr || !layer) return;
+
+    if (selectedIds.length === 1) {
+      const id = selectedIds[0];
+      const node = layer.findOne(`#sym-${id}`);
+      if (node) {
+        tr.nodes([node]);
+      } else {
+        tr.nodes([]);
+      }
+    } else {
+      tr.nodes([]);
+    }
+    layer.batchDraw();
+  }, [selectedIds, symbols]);
+
   return (
-    <Layer>
+    <Layer ref={layerRef}>
       {symbols.map((sym) => (
         <SymbolNode
           key={sym.id}
@@ -44,8 +74,19 @@ export function SymbolsLayer({ pxPerMm }: Props): JSX.Element {
               y: pxToMm(pxPos.y, scale),
             });
           }}
+          onTransformEnd={(rotation) => updateSymbolRotation(sym.id, rotation)}
         />
       ))}
+      <Transformer
+        ref={transformerRef}
+        resizeEnabled={false}
+        rotateEnabled={true}
+        rotationSnaps={[0, 45, 90, 135, 180, 225, 270, 315]}
+        rotationSnapTolerance={5}
+        anchorSize={8}
+        borderEnabled={true}
+        borderStroke="#0080ff"
+      />
     </Layer>
   );
 }
@@ -56,20 +97,24 @@ interface SymbolNodeProps {
   selected: boolean;
   onClick: (shiftKey: boolean) => void;
   onDragEnd: (pxPos: { x: number; y: number }) => void;
+  onTransformEnd: (rotation: number) => void;
 }
 
-function SymbolNode({ symbol, scale, selected, onClick, onDragEnd }: SymbolNodeProps): JSX.Element | null {
+function SymbolNode({
+  symbol,
+  scale,
+  selected,
+  onClick,
+  onDragEnd,
+  onTransformEnd,
+}: SymbolNodeProps): JSX.Element | null {
   const def = getSymbolDefinition(symbol.type);
   if (!def) {
     return null;
   }
-  const shape = def.shape;
   const x = mmToPx(symbol.position.x, scale);
   const y = mmToPx(symbol.position.y, scale);
-  const radiusPx = mmToPx(shape.radiusMm, scale);
-  const strokeWidthPx = Math.max(1, mmToPx(shape.strokeWidthMm, scale));
-  const fontSizePx = mmToPx(shape.fontSizeMm, scale);
-  const boxSize = radiusPx * 2;
+  const bbox = getShapeBoundingBox(def.shape, scale);
 
   const handleClick = (e: KonvaEventObject<MouseEvent>) => {
     e.cancelBubble = true;
@@ -82,6 +127,7 @@ function SymbolNode({ symbol, scale, selected, onClick, onDragEnd }: SymbolNodeP
 
   return (
     <Group
+      id={`sym-${symbol.id}`}
       x={x}
       y={y}
       rotation={symbol.rotation}
@@ -89,25 +135,22 @@ function SymbolNode({ symbol, scale, selected, onClick, onDragEnd }: SymbolNodeP
       onClick={handleClick}
       onTap={handleTap}
       onDragEnd={(e) => onDragEnd({ x: e.target.x(), y: e.target.y() })}
+      onTransformEnd={(e) => {
+        const node = e.target;
+        const rot = node.rotation();
+        // scale はリサイズ無効なので 1 を維持 (Konva が一時的に scale 変更することへの保険)
+        node.scaleX(1);
+        node.scaleY(1);
+        onTransformEnd(rot);
+      }}
     >
-      <Circle radius={radiusPx} stroke="#000" strokeWidth={strokeWidthPx} fill="#fff" />
-      <Text
-        text={shape.text}
-        fontSize={fontSizePx}
-        x={-radiusPx}
-        y={-radiusPx}
-        width={boxSize}
-        height={boxSize}
-        align="center"
-        verticalAlign="middle"
-        listening={false}
-      />
+      <SymbolShapeRenderer shape={def.shape} scale={scale} />
       {selected && (
         <Rect
-          x={-radiusPx - strokeWidthPx * 2}
-          y={-radiusPx - strokeWidthPx * 2}
-          width={boxSize + strokeWidthPx * 4}
-          height={boxSize + strokeWidthPx * 4}
+          x={-bbox.width / 2 - 3}
+          y={-bbox.height / 2 - 3}
+          width={bbox.width + 6}
+          height={bbox.height + 6}
           stroke="#0080ff"
           strokeWidth={1.5}
           dash={[6, 3]}

@@ -27,12 +27,30 @@ export interface ProjectDrawing {
   heightMm: number;
 }
 
+/** Phase 2-B: 主要 20 種の JIS C 0303 シンボル種別 */
+export type SymbolType =
+  // 照明 (6)
+  | 'general-light' | 'downlight' | 'fluorescent' | 'ceiling-light'
+  | 'pull-cord-ceiling' | 'pendant-light'
+  // スイッチ (5)
+  | 'switch-1pole' | 'switch-3way' | 'switch-4way' | 'switch-dimmer' | 'switch-auto'
+  // コンセント (4)
+  | 'outlet-general' | 'outlet-waterproof' | 'outlet-ground' | 'outlet-200v'
+  // 弱電・通信 (3)
+  | 'tv-outlet' | 'lan-outlet' | 'phone-outlet'
+  // その他 (2)
+  | 'ventilation-fan' | 'smoke-detector';
+
+export type SymbolCategory = 'lighting' | 'switch' | 'outlet' | 'low-voltage' | 'other';
+
+export type PropertyValue = string | number | boolean;
+
 export interface ProjectSymbol {
   id: string;
-  type: 'downlight';
+  type: SymbolType;
   position: { x: number; y: number };
   rotation: number;
-  properties: Record<string, unknown>;
+  properties: Record<string, PropertyValue>;
 }
 
 /** Phase 2-A2: グリッド表示設定 (Project に永続化) */

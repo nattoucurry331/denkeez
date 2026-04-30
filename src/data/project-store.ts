@@ -11,7 +11,7 @@ import { generateId } from '../utils/id';
 import { APP_VERSION, SCHEMA_VERSION } from '../shared/constants/app';
 import { debounce } from '../utils/debounce';
 import type { Rotation } from '../pdf/pdf-loader';
-import type { Project, ProjectDrawing, ProjectSymbol } from './types';
+import type { Project, ProjectDrawing, ProjectSymbol, PropertyValue } from './types';
 import { DEFAULT_GRID_CONFIG } from './types';
 
 /** 操作モード。配置モード時は symbolType を保持する。 */
@@ -60,6 +60,12 @@ export interface ProjectActions {
   // M3: シンボル CRUD
   addSymbol: (symbolType: ProjectSymbol['type'], position: { x: number; y: number }) => void;
   updateSymbolPosition: (id: string, position: { x: number; y: number }) => void;
+  /** Phase 2-B2: シンボルのプロパティ (回路番号 / W数 等) を一括更新 */
+  updateSymbolProperties: (id: string, properties: Record<string, PropertyValue>) => void;
+  /** Phase 2-B3: シンボルの回転角度を更新 (Transformer から呼ばれる) */
+  updateSymbolRotation: (id: string, rotation: number) => void;
+  /** Phase 2-B3: 複数シンボルを一括で delta 移動 (矢印キー用) */
+  moveSymbols: (ids: readonly string[], deltaMm: { x: number; y: number }) => void;
   removeSymbols: (ids: readonly string[]) => void;
   // M3: 選択
   selectSymbols: (ids: readonly string[]) => void;
@@ -204,6 +210,50 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         ...current,
         symbols: current.symbols.map((s) =>
           s.id === id ? { ...s, position } : s,
+        ),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  updateSymbolProperties: (id, properties) => {
+    const current = get().project;
+    set({
+      project: {
+        ...current,
+        symbols: current.symbols.map((s) =>
+          s.id === id ? { ...s, properties: { ...properties } } : s,
+        ),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  updateSymbolRotation: (id, rotation) => {
+    const current = get().project;
+    set({
+      project: {
+        ...current,
+        symbols: current.symbols.map((s) => (s.id === id ? { ...s, rotation } : s)),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  moveSymbols: (ids, deltaMm) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const current = get().project;
+    set({
+      project: {
+        ...current,
+        symbols: current.symbols.map((s) =>
+          idSet.has(s.id)
+            ? { ...s, position: { x: s.position.x + deltaMm.x, y: s.position.y + deltaMm.y } }
+            : s,
         ),
         meta: { ...current.meta, updatedAt: nowIso() },
       },

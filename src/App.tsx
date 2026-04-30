@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MenuBar } from './components/menu-bar/MenuBar';
 import { CanvasArea } from './components/canvas-area/CanvasArea';
 import { SymbolPalette } from './components/symbol-palette/SymbolPalette';
+import { PropertyPanel } from './components/property-panel/PropertyPanel';
 import { UnsavedChangesDialog } from './components/dialogs/UnsavedChangesDialog';
 import { StatusBar } from './components/status-bar/StatusBar';
 import {
@@ -49,6 +50,7 @@ export function App(): JSX.Element {
       <div style={mainStyle}>
         <SymbolPalette />
         <CanvasArea />
+        <PropertyPanel />
       </div>
       <StatusBar />
       <UnsavedChangesDialog
