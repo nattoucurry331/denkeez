@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   generateBomCsv,
-  formatSymbolSpec,
   escapeCsvCell,
   suggestedBomCsvName,
 } from '../src/export/csv-exporter';
+import { formatSymbolSpec } from '../src/symbols/symbol-spec';
 import type {
   Layer,
   ProjectSymbol,

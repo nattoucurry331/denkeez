@@ -11,6 +11,7 @@
 // F-15 CSV 出力時に詳細化する。
 
 import type { Layer, ProjectSymbol, SymbolType, Wire, CableType } from './types';
+import { formatSymbolSpec } from '../symbols/symbol-spec';
 
 export interface BomFilter {
   /** true なら visible: false のレイヤー所属を除外、false なら全レイヤー対象 */
@@ -19,6 +20,8 @@ export interface BomFilter {
 
 export interface SymbolCountRow {
   type: SymbolType;
+  /** Phase 2-H: 規格文字列 (例 "7W LED φ100")。空文字なら規格未指定 */
+  spec: string;
   count: number;
 }
 
@@ -61,20 +64,28 @@ export function aggregateSymbols(
   filter: BomFilter,
 ): { rows: SymbolCountRow[]; total: number } {
   const { allowed } = applyLayerFilter(layers, filter);
-  const counts = new Map<SymbolType, number>();
+  // Phase 2-H: (type, spec) でグループ化 → CSV 出力と同じ粒度で別行に。
+  // プリセット由来 / 個別プロパティ違いも別カウントに。
+  const counts = new Map<string, { type: SymbolType; spec: string; count: number }>();
   let total = 0;
   for (const s of symbols) {
     if (!allowed.has(s.layerId)) continue;
-    counts.set(s.type, (counts.get(s.type) ?? 0) + 1);
+    const spec = formatSymbolSpec(s);
+    const key = `${s.type}|${spec}`;
+    const existing = counts.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      counts.set(key, { type: s.type, spec, count: 1 });
+    }
     total += 1;
   }
-  // SymbolType の登場順を保持しつつ、count 多い順 → 同数なら type 名
-  const rows: SymbolCountRow[] = [...counts.entries()]
-    .map(([type, count]) => ({ type, count }))
-    .sort((a, b) => {
-      if (b.count !== a.count) return b.count - a.count;
-      return a.type.localeCompare(b.type);
-    });
+  // count 多い順 → 同数なら type 名 → spec
+  const rows: SymbolCountRow[] = [...counts.values()].sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    if (a.type !== b.type) return a.type.localeCompare(b.type);
+    return a.spec.localeCompare(b.spec);
+  });
   return { rows, total };
 }
 

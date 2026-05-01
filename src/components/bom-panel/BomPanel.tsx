@@ -115,14 +115,18 @@ export function BomPanel(): JSX.Element {
           ) : (
             <table style={tableStyle}>
               <tbody>
-                {report.symbolRows.map((row) => (
-                  <tr key={row.type}>
-                    <td style={tdNameStyle}>
-                      {getSymbolDefinition(row.type)?.name ?? row.type}
-                    </td>
-                    <td style={tdCountStyle}>{row.count}</td>
-                  </tr>
-                ))}
+                {report.symbolRows.map((row) => {
+                  const name = getSymbolDefinition(row.type)?.name ?? row.type;
+                  return (
+                    <tr key={`${row.type}|${row.spec}`}>
+                      <td style={tdNameStyle}>
+                        <span>{name}</span>
+                        {row.spec && <span style={specStyle}>{row.spec}</span>}
+                      </td>
+                      <td style={tdCountStyle}>{row.count}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -245,6 +249,15 @@ const tableStyle: React.CSSProperties = {
 const tdNameStyle: React.CSSProperties = {
   padding: '2px 4px',
   color: '#333',
+  display: 'flex',
+  alignItems: 'baseline',
+  gap: 6,
+  flexWrap: 'wrap',
+};
+const specStyle: React.CSSProperties = {
+  fontSize: '0.72rem',
+  color: '#666',
+  fontWeight: 'normal',
 };
 const tdCountStyle: React.CSSProperties = {
   padding: '2px 4px',

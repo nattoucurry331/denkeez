@@ -26,13 +26,18 @@ function makeLayer(id: string, overrides?: Partial<Layer>): Layer {
   };
 }
 
-function makeSymbol(id: string, type: SymbolType, layerId: string): ProjectSymbol {
+function makeSymbol(
+  id: string,
+  type: SymbolType,
+  layerId: string,
+  properties: ProjectSymbol['properties'] = {},
+): ProjectSymbol {
   return {
     id,
     type,
     position: { x: 0, y: 0 },
     rotation: 0,
-    properties: {},
+    properties,
     layerId,
   };
 }
@@ -117,6 +122,39 @@ describe('aggregateSymbols', () => {
     const { rows, total } = aggregateSymbols([], layers, { visibleOnly: true });
     expect(rows).toEqual([]);
     expect(total).toBe(0);
+  });
+
+  // Phase 2-H 後追い: プリセット由来のプロパティ違いを別行として集計する
+  it('同 type でも spec (規格) が異なれば別行に分かれる', () => {
+    const symbols = [
+      makeSymbol('1', 'downlight', 'a'), // 規格なし
+      makeSymbol('2', 'downlight', 'a'), // 規格なし (1 と同じ行)
+      makeSymbol('3', 'downlight', 'a', { wattage: 7, model: 'LED', diameter: 100 }),
+      makeSymbol('4', 'downlight', 'a', { wattage: 7, model: 'LED', diameter: 100 }), // 3 と同じ
+      makeSymbol('5', 'downlight', 'a', { wattage: 10, model: 'LED', diameter: 150 }),
+    ];
+    const { rows, total } = aggregateSymbols(symbols, layers, { visibleOnly: true });
+    expect(total).toBe(5);
+    // (downlight, '') = 2、 (downlight, '7W LED φ100') = 2、 (downlight, '10W LED φ150') = 1
+    const plain = rows.find((r) => r.type === 'downlight' && r.spec === '');
+    const led7 = rows.find((r) => r.spec === '7W LED φ100');
+    const led10 = rows.find((r) => r.spec === '10W LED φ150');
+    expect(plain?.count).toBe(2);
+    expect(led7?.count).toBe(2);
+    expect(led10?.count).toBe(1);
+    expect(rows.length).toBe(3);
+  });
+
+  it('規格未指定 (spec="") の symbol は 1 行に集約 (全部同じ行)', () => {
+    const symbols = [
+      makeSymbol('1', 'downlight', 'a'),
+      makeSymbol('2', 'downlight', 'a'),
+      makeSymbol('3', 'downlight', 'a'),
+    ];
+    const { rows } = aggregateSymbols(symbols, layers, { visibleOnly: true });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.spec).toBe('');
+    expect(rows[0]?.count).toBe(3);
   });
 });
 
