@@ -26,6 +26,7 @@ import {
   type PdfExportSettings,
 } from '../dialogs/PdfExportDialog';
 import { useUpdaterStore } from '../../data/updater-store';
+import { useRenderSettingsStore } from '../../data/render-settings-store';
 
 export function MenuBar(): JSX.Element {
   const project = useProjectStore((s) => s.project);
@@ -56,6 +57,10 @@ export function MenuBar(): JSX.Element {
   const updateAvailable = useUpdaterStore((s) => s.available);
   const updateInfo = useUpdaterStore((s) => s.info);
   const openUpdateDialog = useUpdaterStore((s) => s.openDialog);
+
+  // Phase 2-G1: シンボル背景の透過/不透過 トグル
+  const symbolTransparent = useRenderSettingsStore((s) => s.symbolTransparent);
+  const toggleSymbolTransparent = useRenderSettingsStore((s) => s.toggleSymbolTransparent);
 
   const wrap = async (fn: () => Promise<void>): Promise<void> => {
     setError(null);
@@ -158,6 +163,7 @@ export function MenuBar(): JSX.Element {
         layerIds: settings.layerIds,
         paperSize: settings.paperSize,
         orientation: settings.orientation,
+        symbolTransparent,
       });
       await writeBinaryFile(path, bytes);
       setInfo(`PDF を出力しました: ${basename(path)}`);
@@ -280,6 +286,14 @@ export function MenuBar(): JSX.Element {
         </button>
       )}
       <span style={separatorStyle}>|</span>
+      <button
+        onClick={toggleSymbolTransparent}
+        type="button"
+        style={symbolTransparent ? activeButtonStyle : undefined}
+        title="ON: シンボルの白塗り背景を透過にして PDF 図面を透けて見せる (黒丸スイッチは除く)"
+      >
+        {symbolTransparent ? '✓ シンボル透過' : 'シンボル不透過'}
+      </button>
       <button
         onClick={() => setDirty(!dirty)}
         type="button"

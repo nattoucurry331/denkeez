@@ -56,6 +56,9 @@ export interface ExportOptions {
   paperSize?: PaperSize;
   /** Phase 2-E3b: 用紙の向き。未指定は 'auto' (図面の縦横比から判定)。 */
   orientation?: PageOrientation;
+  /** Phase 2-G1: シンボル背景透過。true で circle/square/half-circle の白塗りを描画しない。
+   *  solid-circle (黒丸) は意味上の塗り潰しなのでこのフラグの影響を受けない。 */
+  symbolTransparent?: boolean;
 }
 
 /**
@@ -125,11 +128,12 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
   // 配線をシンボルより先に描画 (画面表示と同じ z 順を維持)
   drawWires(pdf, visibleWires, project.symbols, project.layers, layout.scale, tx, ty);
 
+  const symbolTransparent = options.symbolTransparent ?? false;
   for (const symbol of visibleSymbols) {
     const def = getSymbolDefinition(symbol.type);
     if (!def) continue;
     const color = getLayerColor(symbol.layerId, project.layers);
-    drawSymbol(pdf, symbol, def.shape, color, layout.scale, tx, ty, ts);
+    drawSymbol(pdf, symbol, def.shape, color, symbolTransparent, layout.scale, tx, ty, ts);
   }
 
   const buffer = pdf.output('arraybuffer');
@@ -359,6 +363,8 @@ function drawSymbol(
   symbol: ProjectSymbol,
   shape: SymbolShape,
   strokeColor: string,
+  /** Phase 2-G1: true で circle/square/half-circle の白塗りを省略 (solid-circle は除外) */
+  transparent: boolean,
   scale: number,
   tx: (mm: number) => number,
   ty: (mm: number) => number,
@@ -371,14 +377,18 @@ function drawSymbol(
   pdf.setFillColor(255, 255, 255);
   pdf.setTextColor(strokeColor);
 
+  // 'FD' = fill + stroke (不透過時)、'D' = stroke のみ (透過時)
+  const fillStyle = transparent ? 'D' : 'FD';
+
   if (shape.kind === 'circle-with-text') {
     pdf.setLineWidth(shape.strokeWidthMm * scale);
-    pdf.circle(cx, cy, ts(shape.radiusMm), 'FD');
+    pdf.circle(cx, cy, ts(shape.radiusMm), fillStyle);
     if (shape.text) {
       pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * scale);
       pdf.text(shape.text, cx, cy, { align: 'center', baseline: 'middle' });
     }
   } else if (shape.kind === 'solid-circle-with-text') {
+    // 黒丸スイッチは意味上の塗り潰し → transparent フラグの影響を受けない
     pdf.setFillColor(strokeColor);
     pdf.circle(cx, cy, ts(shape.radiusMm), 'F');
     if (shape.text) {
@@ -390,7 +400,7 @@ function drawSymbol(
     pdf.setLineWidth(shape.strokeWidthMm * scale);
     const w = ts(shape.widthMm);
     const h = ts(shape.heightMm);
-    pdf.rect(cx - w / 2, cy - h / 2, w, h, 'FD');
+    pdf.rect(cx - w / 2, cy - h / 2, w, h, fillStyle);
     if (shape.text) {
       pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * scale);
       pdf.text(shape.text, cx, cy, { align: 'center', baseline: 'middle' });
@@ -398,7 +408,7 @@ function drawSymbol(
   } else if (shape.kind === 'circle-with-cross') {
     pdf.setLineWidth(shape.strokeWidthMm * scale);
     const r = ts(shape.radiusMm);
-    pdf.circle(cx, cy, r, 'FD');
+    pdf.circle(cx, cy, r, fillStyle);
     // 内接 × (45° 方向、長さ = radius * sqrt(2))
     const half = r * Math.SQRT1_2;
     pdf.line(cx - half, cy - half, cx + half, cy + half);
@@ -406,7 +416,7 @@ function drawSymbol(
   } else if (shape.kind === 'half-circle-with-text') {
     // Phase 2-E3a: 上半円 (∩ 形) を ベジェ近似で正式描画。
     pdf.setLineWidth(shape.strokeWidthMm * scale);
-    drawHalfCircle(pdf, cx, cy, ts(shape.radiusMm));
+    drawHalfCircle(pdf, cx, cy, ts(shape.radiusMm), fillStyle);
     if (shape.text) {
       pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * scale);
       pdf.text(shape.text, cx, cy - ts(shape.radiusMm) * 0.4, {
@@ -418,12 +428,22 @@ function drawSymbol(
 }
 
 /**
- * 上半円 (底辺は直線、上が曲線、PDF 座標は Y 下向き) を fill+stroke で描画する。
+ * 上半円 (底辺は直線、上が曲線、PDF 座標は Y 下向き) を描画する。
  * jsPDF に半円 API が無いため、3 次ベジェで上半円弧を近似 + 底辺を直線で閉じる。
  *
  * 単位円の四分円ベジェ近似定数 K ≈ 0.5523 (8 分の 4 円で誤差 0.027% 程度)。
+ *
+ * fillStyle:
+ *   'FD' (= fill + stroke): 白塗り済みの不透過モード (デフォルト)
+ *   'D' (= stroke only): 透過モード
  */
-function drawHalfCircle(pdf: jsPDF, cx: number, cy: number, r: number): void {
+function drawHalfCircle(
+  pdf: jsPDF,
+  cx: number,
+  cy: number,
+  r: number,
+  fillStyle: 'FD' | 'D',
+): void {
   const K = 0.5522847498307933;
   const handleX = r * K;
   const handleY = r * K;
@@ -445,7 +465,7 @@ function drawHalfCircle(pdf: jsPDF, cx: number, cy: number, r: number): void {
     cx - r, // 開始点 x (左端)
     cy, // 開始点 y
     [1, 1], // scale
-    'FD', // fill + stroke
+    fillStyle,
     true, // 閉じる
   );
 }

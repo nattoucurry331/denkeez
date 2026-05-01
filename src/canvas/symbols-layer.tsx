@@ -14,6 +14,7 @@ import { mmToPx, pxToMm, type Scale } from '../utils/coordinate';
 import { getSymbolDefinition } from '../symbols/symbol-registry';
 import { SymbolShapeRenderer, getShapeBoundingBox } from './symbol-shape';
 import { lockedLayerIds, sortSymbolsByLayerOrder, getLayerColor } from '../data/layer-helpers';
+import { useRenderSettingsStore } from '../data/render-settings-store';
 import type { ProjectSymbol } from '../data/types';
 
 interface Props {
@@ -36,6 +37,7 @@ export function SymbolsLayer({ pxPerMm, paperPxPerMm }: Props): JSX.Element {
   const updateSymbolRotation = useProjectStore((s) => s.updateSymbolRotation);
   const selectSymbols = useProjectStore((s) => s.selectSymbols);
   const toggleSelectSymbol = useProjectStore((s) => s.toggleSelectSymbol);
+  const symbolTransparent = useRenderSettingsStore((s) => s.symbolTransparent);
 
   const scale: Scale = { pxPerMm };
   const paperScale: Scale = { pxPerMm: paperPxPerMm };
@@ -94,6 +96,7 @@ export function SymbolsLayer({ pxPerMm, paperPxPerMm }: Props): JSX.Element {
             selected={selectedSet.has(sym.id)}
             locked={isLocked}
             strokeColor={symbolColor}
+            transparent={symbolTransparent}
             // 配線モード中はクリックをバブルさせて Stage 側 (CanvasArea.handleStageClick) で
             // setWireFromSymbol / addWire を処理する。select モードのみ自前で選択する。
             wireModeActive={mode.kind === 'wire'}
@@ -146,6 +149,8 @@ interface SymbolNodeProps {
   wireModeActive: boolean;
   /** 線色 / 文字色 — 所属レイヤーの color */
   strokeColor: string;
+  /** Phase 2-G1: 背景透過 */
+  transparent: boolean;
   onClick: (shiftKey: boolean) => void;
   onDragEnd: (pxPos: { x: number; y: number }) => void;
   onTransformEnd: (rotation: number) => void;
@@ -159,6 +164,7 @@ function SymbolNode({
   locked,
   wireModeActive,
   strokeColor,
+  transparent,
   onClick,
   onDragEnd,
   onTransformEnd,
@@ -209,7 +215,12 @@ function SymbolNode({
         onTransformEnd(rot);
       }}
     >
-      <SymbolShapeRenderer shape={def.shape} scale={paperScale} strokeColor={strokeColor} />
+      <SymbolShapeRenderer
+        shape={def.shape}
+        scale={paperScale}
+        strokeColor={strokeColor}
+        transparent={transparent}
+      />
       {selected && (
         <Rect
           x={-bbox.width / 2 - 3}
