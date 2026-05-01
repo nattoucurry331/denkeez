@@ -4,16 +4,24 @@ import { CanvasArea } from './components/canvas-area/CanvasArea';
 import { SymbolPalette } from './components/symbol-palette/SymbolPalette';
 import { RightPanel } from './components/right-panel/RightPanel';
 import { UnsavedChangesDialog } from './components/dialogs/UnsavedChangesDialog';
+import { UpdateDialog } from './components/dialogs/UpdateDialog';
 import { StatusBar } from './components/status-bar/StatusBar';
 import {
   registerCloseConfirmHandler,
   setupCloseHandler,
   type CloseDecision,
 } from './tauri/close-handler';
+import { checkForUpdate } from './tauri/updater';
+import { useUpdaterStore } from './data/updater-store';
 
 export function App(): JSX.Element {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const resolverRef = useRef<((decision: CloseDecision) => void) | null>(null);
+
+  const updateInfo = useUpdaterStore((s) => s.info);
+  const updateDialogOpen = useUpdaterStore((s) => s.dialogOpen);
+  const setUpdateAvailable = useUpdaterStore((s) => s.setUpdateAvailable);
+  const closeUpdateDialog = useUpdaterStore((s) => s.closeDialog);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -38,6 +46,18 @@ export function App(): JSX.Element {
     };
   }, []);
 
+  // Phase 2-F3: 起動から数秒後に更新チェック (起動を妨げないよう delayed background)
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void checkForUpdate().then((result) => {
+        if (result.available && result.info) {
+          setUpdateAvailable(result.info);
+        }
+      });
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [setUpdateAvailable]);
+
   const decide = (decision: CloseDecision): void => {
     setConfirmOpen(false);
     resolverRef.current?.(decision);
@@ -58,6 +78,11 @@ export function App(): JSX.Element {
         onSave={() => decide('save')}
         onDiscard={() => decide('discard')}
         onCancel={() => decide('cancel')}
+      />
+      <UpdateDialog
+        open={updateDialogOpen}
+        info={updateInfo}
+        onCancel={closeUpdateDialog}
       />
     </div>
   );
