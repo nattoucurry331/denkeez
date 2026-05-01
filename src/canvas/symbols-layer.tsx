@@ -14,7 +14,10 @@ import { mmToPx, pxToMm, type Scale } from '../utils/coordinate';
 import { getSymbolDefinition } from '../symbols/symbol-registry';
 import { SymbolShapeRenderer, getShapeBoundingBox } from './symbol-shape';
 import { lockedLayerIds, sortSymbolsByLayerOrder, getLayerColor } from '../data/layer-helpers';
-import { useRenderSettingsStore } from '../data/render-settings-store';
+import {
+  useRenderSettingsStore,
+  computeEffectiveSymbolScale,
+} from '../data/render-settings-store';
 import type { ProjectSymbol } from '../data/types';
 
 interface Props {
@@ -38,9 +41,10 @@ export function SymbolsLayer({ pxPerMm, paperPxPerMm }: Props): JSX.Element {
   const selectSymbols = useProjectStore((s) => s.selectSymbols);
   const toggleSelectSymbol = useProjectStore((s) => s.toggleSelectSymbol);
   const symbolTransparent = useRenderSettingsStore((s) => s.symbolTransparent);
+  const globalSizeScale = useRenderSettingsStore((s) => s.globalSizeScale);
+  const typeScales = useRenderSettingsStore((s) => s.typeScales);
 
   const scale: Scale = { pxPerMm };
-  const paperScale: Scale = { pxPerMm: paperPxPerMm };
   const selectedSet = new Set(selectedIds);
   // Phase 2-D2: 非表示レイヤーに所属する symbol は描画しない (F-08)
   const hiddenLayerIds = new Set(layers.filter((l) => !l.visible).map((l) => l.id));
@@ -87,12 +91,20 @@ export function SymbolsLayer({ pxPerMm, paperPxPerMm }: Props): JSX.Element {
       {visibleSymbols.map((sym) => {
         const isLocked = lockedIds.has(sym.layerId);
         const symbolColor = getLayerColor(sym.layerId, layers);
+        // Phase 2-G3a: 最終サイズ倍率 = global × type × per-symbol
+        const effectiveScale = computeEffectiveSymbolScale(
+          globalSizeScale,
+          typeScales,
+          sym.type,
+          sym.scale,
+        );
+        const symbolPaperScale: Scale = { pxPerMm: paperPxPerMm * effectiveScale };
         return (
           <SymbolNode
             key={sym.id}
             symbol={sym}
             scale={scale}
-            paperScale={paperScale}
+            paperScale={symbolPaperScale}
             selected={selectedSet.has(sym.id)}
             locked={isLocked}
             strokeColor={symbolColor}

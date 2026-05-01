@@ -46,6 +46,7 @@ const PropertyValueSchema = z.union([z.string(), z.number().finite(), z.boolean(
 
 // Phase 2-D1: layerId は schemaVersion 2 で必須化したが、v1 ファイル後方互換のため
 // スキーマレベルでは optional とし、project-io.ts のマイグレーションで補う。
+// Phase 2-G3a: scale (個別サイズ倍率) を optional で追加 (未指定は 1.0 扱い)。
 const ProjectSymbolSchema = z.object({
   id: z.string().min(1),
   type: SymbolTypeSchema,
@@ -53,6 +54,7 @@ const ProjectSymbolSchema = z.object({
   rotation: z.number().finite(),
   properties: z.record(z.string(), PropertyValueSchema),
   layerId: z.string().min(1).optional(),
+  scale: z.number().positive().finite().optional(),
 });
 
 const ProjectGridConfigSchema = z.object({

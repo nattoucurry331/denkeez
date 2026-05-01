@@ -103,6 +103,13 @@ export interface ProjectSymbol {
   /** Phase 2-D1: 所属レイヤー ID (REQUIREMENTS §4.3)。schemaVersion 2 で必須化。
    *  schemaVersion 1 ファイル読込時はマイグレーションで「未分類」レイヤーに割当。 */
   layerId: string;
+  /**
+   * Phase 2-G3a: 個別サイズ倍率 (REQUIREMENTS §4.3 既定の `scale: number`)。
+   * 未指定なら 1.0 として扱う (後方互換のため optional)。
+   * 描画時の最終倍率 = globalSizeScale × typeScales[type] × scale。
+   * 範囲: 0.1〜10.0 を実用範囲とするが、UI 側で 0.5〜3.0 にクランプ。
+   */
+  scale?: number;
 }
 
 /** Phase 2-A2 / 2-C 拡張: グリッド表示設定 (Project に永続化) */

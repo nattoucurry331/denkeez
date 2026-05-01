@@ -17,11 +17,12 @@
 // 結果として svg2pdf 依存は実際には未使用 (将来 SVG パスシンボルを追加した際に再導入予定)。
 
 import jsPDF from 'jspdf';
-import type { Layer, Project, ProjectSymbol, Wire, WireType } from '../data/types';
+import type { Layer, Project, ProjectSymbol, SymbolType, Wire, WireType } from '../data/types';
 import { BACKGROUND_LAYER_ID } from '../data/types';
 import { getSymbolDefinition, type SymbolShape } from '../symbols/symbol-registry';
 import { getWirePoints } from '../utils/wire-geometry';
 import { getLayerColor } from '../data/layer-helpers';
+import { computeEffectiveSymbolScale } from '../data/render-settings-store';
 
 const MM_PER_INCH = 25.4;
 const PT_PER_INCH = 72;
@@ -59,6 +60,10 @@ export interface ExportOptions {
   /** Phase 2-G1: シンボル背景透過。true で circle/square/half-circle の白塗りを描画しない。
    *  solid-circle (黒丸) は意味上の塗り潰しなのでこのフラグの影響を受けない。 */
   symbolTransparent?: boolean;
+  /** Phase 2-G3a: 全シンボル一律のサイズ倍率 (Daisuke の好み)。未指定は 1.0。 */
+  globalSizeScale?: number;
+  /** Phase 2-G3b: SymbolType ごとのサイズ倍率。未指定型は 1.0。 */
+  typeScales?: Partial<Record<SymbolType, number>>;
 }
 
 /**
@@ -129,11 +134,30 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
   drawWires(pdf, visibleWires, project.symbols, project.layers, layout.scale, tx, ty);
 
   const symbolTransparent = options.symbolTransparent ?? false;
+  const globalSizeScale = options.globalSizeScale ?? 1.0;
+  const typeScales = options.typeScales ?? {};
   for (const symbol of visibleSymbols) {
     const def = getSymbolDefinition(symbol.type);
     if (!def) continue;
     const color = getLayerColor(symbol.layerId, project.layers);
-    drawSymbol(pdf, symbol, def.shape, color, symbolTransparent, layout.scale, tx, ty, ts);
+    const sizeMultiplier = computeEffectiveSymbolScale(
+      globalSizeScale,
+      typeScales,
+      symbol.type,
+      symbol.scale,
+    );
+    drawSymbol(
+      pdf,
+      symbol,
+      def.shape,
+      color,
+      symbolTransparent,
+      sizeMultiplier,
+      layout.scale,
+      tx,
+      ty,
+      ts,
+    );
   }
 
   const buffer = pdf.output('arraybuffer');
@@ -365,6 +389,8 @@ function drawSymbol(
   strokeColor: string,
   /** Phase 2-G1: true で circle/square/half-circle の白塗りを省略 (solid-circle は除外) */
   transparent: boolean,
+  /** Phase 2-G3a: シンボル個別の最終サイズ倍率 (global × type × per-symbol)。1.0 で従来通り。 */
+  sizeMultiplier: number,
   scale: number,
   tx: (mm: number) => number,
   ty: (mm: number) => number,
@@ -379,35 +405,40 @@ function drawSymbol(
 
   // 'FD' = fill + stroke (不透過時)、'D' = stroke のみ (透過時)
   const fillStyle = transparent ? 'D' : 'FD';
+  // 紙面 mm にシンボル倍率を掛けてから ts() で PDF mm に変換するヘルパ
+  const tsm = (paperMm: number): number => ts(paperMm * sizeMultiplier);
+  // 線幅・フォントサイズも倍率を反映 (sizeMultiplier × scale = layout 込みの最終倍率)
+  const strokeMul = sizeMultiplier * scale;
+  const fontMul = sizeMultiplier * scale;
 
   if (shape.kind === 'circle-with-text') {
-    pdf.setLineWidth(shape.strokeWidthMm * scale);
-    pdf.circle(cx, cy, ts(shape.radiusMm), fillStyle);
+    pdf.setLineWidth(shape.strokeWidthMm * strokeMul);
+    pdf.circle(cx, cy, tsm(shape.radiusMm), fillStyle);
     if (shape.text) {
-      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * scale);
+      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * fontMul);
       pdf.text(shape.text, cx, cy, { align: 'center', baseline: 'middle' });
     }
   } else if (shape.kind === 'solid-circle-with-text') {
     // 黒丸スイッチは意味上の塗り潰し → transparent フラグの影響を受けない
     pdf.setFillColor(strokeColor);
-    pdf.circle(cx, cy, ts(shape.radiusMm), 'F');
+    pdf.circle(cx, cy, tsm(shape.radiusMm), 'F');
     if (shape.text) {
       pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * scale);
+      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * fontMul);
       pdf.text(shape.text, cx, cy, { align: 'center', baseline: 'middle' });
     }
   } else if (shape.kind === 'square-with-text') {
-    pdf.setLineWidth(shape.strokeWidthMm * scale);
-    const w = ts(shape.widthMm);
-    const h = ts(shape.heightMm);
+    pdf.setLineWidth(shape.strokeWidthMm * strokeMul);
+    const w = tsm(shape.widthMm);
+    const h = tsm(shape.heightMm);
     pdf.rect(cx - w / 2, cy - h / 2, w, h, fillStyle);
     if (shape.text) {
-      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * scale);
+      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * fontMul);
       pdf.text(shape.text, cx, cy, { align: 'center', baseline: 'middle' });
     }
   } else if (shape.kind === 'circle-with-cross') {
-    pdf.setLineWidth(shape.strokeWidthMm * scale);
-    const r = ts(shape.radiusMm);
+    pdf.setLineWidth(shape.strokeWidthMm * strokeMul);
+    const r = tsm(shape.radiusMm);
     pdf.circle(cx, cy, r, fillStyle);
     // 内接 × (45° 方向、長さ = radius * sqrt(2))
     const half = r * Math.SQRT1_2;
@@ -415,11 +446,11 @@ function drawSymbol(
     pdf.line(cx - half, cy + half, cx + half, cy - half);
   } else if (shape.kind === 'half-circle-with-text') {
     // Phase 2-E3a: 上半円 (∩ 形) を ベジェ近似で正式描画。
-    pdf.setLineWidth(shape.strokeWidthMm * scale);
-    drawHalfCircle(pdf, cx, cy, ts(shape.radiusMm), fillStyle);
+    pdf.setLineWidth(shape.strokeWidthMm * strokeMul);
+    drawHalfCircle(pdf, cx, cy, tsm(shape.radiusMm), fillStyle);
     if (shape.text) {
-      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * scale);
-      pdf.text(shape.text, cx, cy - ts(shape.radiusMm) * 0.4, {
+      pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * fontMul);
+      pdf.text(shape.text, cx, cy - tsm(shape.radiusMm) * 0.4, {
         align: 'center',
         baseline: 'middle',
       });

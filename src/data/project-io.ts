@@ -118,7 +118,7 @@ function buildProject(
 // exactOptionalPropertyTypes: true 環境のため、optional フィールドは
 // 「キーごと省略 or 値ありで明示」の二択にする (undefined 値の代入は型エラー)。
 function canonicalizeSymbol(s: ParsedSymbol, fallbackLayerId: string): ProjectSymbol {
-  return {
+  const result: ProjectSymbol = {
     id: s.id,
     type: s.type,
     position: s.position,
@@ -126,6 +126,12 @@ function canonicalizeSymbol(s: ParsedSymbol, fallbackLayerId: string): ProjectSy
     properties: s.properties,
     layerId: s.layerId ?? fallbackLayerId,
   };
+  // Phase 2-G3a: scale は optional のため、定義されている場合のみ付与
+  // (exactOptionalPropertyTypes で undefined の代入を避けるため)
+  if (s.scale !== undefined) {
+    result.scale = s.scale;
+  }
+  return result;
 }
 
 function canonicalizeWire(w: ParsedWire, fallbackLayerId: string): Wire {

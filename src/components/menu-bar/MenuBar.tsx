@@ -63,6 +63,11 @@ export function MenuBar(): JSX.Element {
   const symbolTransparent = useRenderSettingsStore((s) => s.symbolTransparent);
   const toggleSymbolTransparent = useRenderSettingsStore((s) => s.toggleSymbolTransparent);
 
+  // Phase 2-G3a: シンボルサイズ倍率
+  const globalSizeScale = useRenderSettingsStore((s) => s.globalSizeScale);
+  const setGlobalSizeScale = useRenderSettingsStore((s) => s.setGlobalSizeScale);
+  const typeScales = useRenderSettingsStore((s) => s.typeScales);
+
   // Phase 2-G2: About / 免責ダイアログ
   const [aboutOpen, setAboutOpen] = useState(false);
 
@@ -168,6 +173,8 @@ export function MenuBar(): JSX.Element {
         paperSize: settings.paperSize,
         orientation: settings.orientation,
         symbolTransparent,
+        globalSizeScale,
+        typeScales,
       });
       await writeBinaryFile(path, bytes);
       setInfo(`PDF を出力しました: ${basename(path)}`);
@@ -298,6 +305,25 @@ export function MenuBar(): JSX.Element {
       >
         {symbolTransparent ? '✓ シンボル透過' : 'シンボル不透過'}
       </button>
+      <label
+        style={sizeScaleLabelStyle}
+        title="全シンボル一律のサイズ倍率 (0.5〜3.0、種別/個別倍率に重ねて作用)"
+      >
+        サイズ ×
+        <input
+          type="number"
+          min={0.5}
+          max={3.0}
+          step={0.1}
+          value={globalSizeScale}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            if (Number.isFinite(v)) setGlobalSizeScale(v);
+          }}
+          style={sizeScaleInputStyle}
+          aria-label="シンボルサイズ倍率"
+        />
+      </label>
       <button
         onClick={() => setDirty(!dirty)}
         type="button"
@@ -408,4 +434,19 @@ const updateBadgeStyle: React.CSSProperties = {
 };
 const helpButtonStyle: React.CSSProperties = {
   background: '#f5f5f5',
+};
+const sizeScaleLabelStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  fontSize: '0.82rem',
+  color: '#444',
+};
+const sizeScaleInputStyle: React.CSSProperties = {
+  width: 50,
+  fontSize: '0.85rem',
+  padding: '2px 4px',
+  border: '1px solid #ccc',
+  borderRadius: 3,
+  fontVariantNumeric: 'tabular-nums',
 };
