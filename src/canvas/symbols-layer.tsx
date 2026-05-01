@@ -109,6 +109,7 @@ export function SymbolsLayer({ pxPerMm, paperPxPerMm }: Props): JSX.Element {
             locked={isLocked}
             strokeColor={symbolColor}
             transparent={symbolTransparent}
+            textOverride={sym.text}
             // 配線モード中はクリックをバブルさせて Stage 側 (CanvasArea.handleStageClick) で
             // setWireFromSymbol / addWire を処理する。select モードのみ自前で選択する。
             wireModeActive={mode.kind === 'wire'}
@@ -163,6 +164,8 @@ interface SymbolNodeProps {
   strokeColor: string;
   /** Phase 2-G1: 背景透過 */
   transparent: boolean;
+  /** Phase 2-H: 表示テキスト上書き (symbol.text、preset 由来 or 個別) */
+  textOverride: string | undefined;
   onClick: (shiftKey: boolean) => void;
   onDragEnd: (pxPos: { x: number; y: number }) => void;
   onTransformEnd: (rotation: number) => void;
@@ -177,6 +180,7 @@ function SymbolNode({
   wireModeActive,
   strokeColor,
   transparent,
+  textOverride,
   onClick,
   onDragEnd,
   onTransformEnd,
@@ -232,6 +236,7 @@ function SymbolNode({
         scale={paperScale}
         strokeColor={strokeColor}
         transparent={transparent}
+        textOverride={textOverride}
       />
       {selected && (
         <Rect

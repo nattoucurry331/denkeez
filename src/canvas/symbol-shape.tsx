@@ -20,6 +20,19 @@ interface Props {
    * solid-circle-with-text (黒丸スイッチ) はシンボルの意味として塗り潰しが必須なので無視。
    */
   transparent?: boolean;
+  /**
+   * Phase 2-H: 表示テキスト上書き (preset 由来 or 個別)。
+   * 設定されていれば shape.text の代わりに描画。circle-with-cross は本来テキストを持たないが、
+   * 上書きが指定されていれば文字入りで描画する。
+   */
+  textOverride?: string | undefined;
+}
+
+/** shape の text を解決 (override 優先、shape 自体に text フィールドが無い場合は空文字) */
+function resolveText(shape: SymbolShape, override: string | undefined): string {
+  if (override !== undefined && override !== '') return override;
+  if ('text' in shape) return shape.text;
+  return '';
 }
 
 export function SymbolShapeRenderer({
@@ -27,7 +40,9 @@ export function SymbolShapeRenderer({
   scale,
   strokeColor = '#000',
   transparent = false,
+  textOverride,
 }: Props): JSX.Element {
+  const effectiveText = resolveText(shape, textOverride);
   switch (shape.kind) {
     case 'circle-with-text':
       return (
@@ -36,6 +51,7 @@ export function SymbolShapeRenderer({
           scale={scale}
           strokeColor={strokeColor}
           transparent={transparent}
+          effectiveText={effectiveText}
         />
       );
     case 'circle-with-cross':
@@ -54,11 +70,19 @@ export function SymbolShapeRenderer({
           scale={scale}
           strokeColor={strokeColor}
           transparent={transparent}
+          effectiveText={effectiveText}
         />
       );
     case 'solid-circle-with-text':
       // 黒丸は意味上の塗り潰しなので transparent は無視
-      return <SolidCircleWithText shape={shape} scale={scale} strokeColor={strokeColor} />;
+      return (
+        <SolidCircleWithText
+          shape={shape}
+          scale={scale}
+          strokeColor={strokeColor}
+          effectiveText={effectiveText}
+        />
+      );
     case 'half-circle-with-text':
       return (
         <HalfCircleWithText
@@ -66,6 +90,7 @@ export function SymbolShapeRenderer({
           scale={scale}
           strokeColor={strokeColor}
           transparent={transparent}
+          effectiveText={effectiveText}
         />
       );
   }
@@ -102,11 +127,13 @@ function CircleWithText({
   scale,
   strokeColor,
   transparent,
+  effectiveText,
 }: {
   shape: Extract<SymbolShape, { kind: 'circle-with-text' }>;
   scale: Scale;
   strokeColor: string;
   transparent: boolean;
+  effectiveText: string;
 }): JSX.Element {
   const radius = mmToPx(shape.radiusMm, scale);
   const stroke = Math.max(1, mmToPx(shape.strokeWidthMm, scale));
@@ -121,9 +148,9 @@ function CircleWithText({
         fill="#fff"
         fillEnabled={!transparent}
       />
-      {shape.text && (
+      {effectiveText && (
         <Text
-          text={shape.text}
+          text={effectiveText}
           fontSize={fontSize}
           x={-radius}
           y={-radius}
@@ -174,11 +201,13 @@ function SquareWithText({
   scale,
   strokeColor,
   transparent,
+  effectiveText,
 }: {
   shape: Extract<SymbolShape, { kind: 'square-with-text' }>;
   scale: Scale;
   strokeColor: string;
   transparent: boolean;
+  effectiveText: string;
 }): JSX.Element {
   const w = mmToPx(shape.widthMm, scale);
   const h = mmToPx(shape.heightMm, scale);
@@ -196,9 +225,9 @@ function SquareWithText({
         fill="#fff"
         fillEnabled={!transparent}
       />
-      {shape.text && (
+      {effectiveText && (
         <Text
-          text={shape.text}
+          text={effectiveText}
           fontSize={fontSize}
           x={-w / 2}
           y={-h / 2}
@@ -218,10 +247,12 @@ function SolidCircleWithText({
   shape,
   scale,
   strokeColor,
+  effectiveText,
 }: {
   shape: Extract<SymbolShape, { kind: 'solid-circle-with-text' }>;
   scale: Scale;
   strokeColor: string;
+  effectiveText: string;
 }): JSX.Element {
   const radius = mmToPx(shape.radiusMm, scale);
   const fontSize = mmToPx(shape.fontSizeMm, scale);
@@ -229,9 +260,9 @@ function SolidCircleWithText({
   return (
     <>
       <Circle radius={radius} fill={strokeColor} />
-      {shape.text && (
+      {effectiveText && (
         <Text
-          text={shape.text}
+          text={effectiveText}
           fontSize={fontSize}
           x={-radius}
           y={-radius}
@@ -252,11 +283,13 @@ function HalfCircleWithText({
   scale,
   strokeColor,
   transparent,
+  effectiveText,
 }: {
   shape: Extract<SymbolShape, { kind: 'half-circle-with-text' }>;
   scale: Scale;
   strokeColor: string;
   transparent: boolean;
+  effectiveText: string;
 }): JSX.Element {
   const radius = mmToPx(shape.radiusMm, scale);
   const stroke = Math.max(1, mmToPx(shape.strokeWidthMm, scale));
@@ -283,9 +316,9 @@ function HalfCircleWithText({
         fill="#fff"
         fillEnabled={!transparent}
       />
-      {shape.text && (
+      {effectiveText && (
         <Text
-          text={shape.text}
+          text={effectiveText}
           fontSize={fontSize}
           x={-radius}
           y={-radius * 0.85}

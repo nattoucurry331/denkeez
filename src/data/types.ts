@@ -110,6 +110,42 @@ export interface ProjectSymbol {
    * 範囲: 0.1〜10.0 を実用範囲とするが、UI 側で 0.5〜3.0 にクランプ。
    */
   scale?: number;
+  /**
+   * Phase 2-H: シンボル個別の表示テキスト上書き (preset 由来 or 個別編集)。
+   * 設定されていれば shape.text の代わりにこの文字列を描画する。
+   * 例: ダウンライト基本表示 "DL" を "100" (φ100mm) に上書きする等。
+   * 未指定 (undefined) なら shape.text をそのまま使用 (後方互換)。
+   */
+  text?: string;
+}
+
+/**
+ * Phase 2-H: ユーザー定義のシンボルプリセット。
+ *
+ * 「ダウンライト LED 7W φ100」のような既存 SymbolType のバリエーションを保存し、
+ * シンボルパレットから一発配置できるようにする。配置すると baseType + properties +
+ * scale + text が自動的に ProjectSymbol に反映される。
+ *
+ * 保存場所:
+ *   - localStorage (Daisuke の好み、現場をまたいで使える)
+ *   - Phase 3 で .dkz 同梱対応 (案件特有のプリセットを共有可能に)
+ *
+ * 集計ロジック (拾い出し / CSV) は formatSymbolSpec で properties 由来で行うため、
+ * preset を使った場合も自動的に種別 × 規格 で分類される。
+ */
+export interface SymbolPreset {
+  /** UUID */
+  id: string;
+  /** ベースとなる組み込みシンボル種別 */
+  baseType: SymbolType;
+  /** パレット表示名 (例: "ダウンライト LED 7W φ100") */
+  displayName: string;
+  /** 配置時に自動セットされるプロパティ (wattage, model, diameter 等) */
+  defaultProperties: Record<string, PropertyValue>;
+  /** 円/四角の中に表示する文字 (shape.text を上書き) */
+  textOverride?: string;
+  /** 個別サイズ倍率 (0.5〜3.0、未指定なら 1.0) */
+  scaleOverride?: number;
 }
 
 /** Phase 2-A2 / 2-C 拡張: グリッド表示設定 (Project に永続化) */

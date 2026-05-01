@@ -157,6 +157,7 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
       tx,
       ty,
       ts,
+      symbol.text,
     );
   }
 
@@ -395,6 +396,8 @@ function drawSymbol(
   tx: (mm: number) => number,
   ty: (mm: number) => number,
   ts: (mm: number) => number,
+  /** Phase 2-H: 表示テキスト上書き (preset 由来 or 個別) */
+  textOverride: string | undefined,
 ): void {
   const cx = tx(symbol.position.x);
   const cy = ty(symbol.position.y);
@@ -411,30 +414,35 @@ function drawSymbol(
   const strokeMul = sizeMultiplier * scale;
   const fontMul = sizeMultiplier * scale;
 
+  // shape.text を override で上書き (Phase 2-H)
+  const baseText = 'text' in shape ? shape.text : '';
+  const effectiveText =
+    textOverride !== undefined && textOverride !== '' ? textOverride : baseText;
+
   if (shape.kind === 'circle-with-text') {
     pdf.setLineWidth(shape.strokeWidthMm * strokeMul);
     pdf.circle(cx, cy, tsm(shape.radiusMm), fillStyle);
-    if (shape.text) {
+    if (effectiveText) {
       pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * fontMul);
-      pdf.text(shape.text, cx, cy, { align: 'center', baseline: 'middle' });
+      pdf.text(effectiveText, cx, cy, { align: 'center', baseline: 'middle' });
     }
   } else if (shape.kind === 'solid-circle-with-text') {
     // 黒丸スイッチは意味上の塗り潰し → transparent フラグの影響を受けない
     pdf.setFillColor(strokeColor);
     pdf.circle(cx, cy, tsm(shape.radiusMm), 'F');
-    if (shape.text) {
+    if (effectiveText) {
       pdf.setTextColor(255, 255, 255);
       pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * fontMul);
-      pdf.text(shape.text, cx, cy, { align: 'center', baseline: 'middle' });
+      pdf.text(effectiveText, cx, cy, { align: 'center', baseline: 'middle' });
     }
   } else if (shape.kind === 'square-with-text') {
     pdf.setLineWidth(shape.strokeWidthMm * strokeMul);
     const w = tsm(shape.widthMm);
     const h = tsm(shape.heightMm);
     pdf.rect(cx - w / 2, cy - h / 2, w, h, fillStyle);
-    if (shape.text) {
+    if (effectiveText) {
       pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * fontMul);
-      pdf.text(shape.text, cx, cy, { align: 'center', baseline: 'middle' });
+      pdf.text(effectiveText, cx, cy, { align: 'center', baseline: 'middle' });
     }
   } else if (shape.kind === 'circle-with-cross') {
     pdf.setLineWidth(shape.strokeWidthMm * strokeMul);
@@ -448,9 +456,9 @@ function drawSymbol(
     // Phase 2-E3a: 上半円 (∩ 形) を ベジェ近似で正式描画。
     pdf.setLineWidth(shape.strokeWidthMm * strokeMul);
     drawHalfCircle(pdf, cx, cy, tsm(shape.radiusMm), fillStyle);
-    if (shape.text) {
+    if (effectiveText) {
       pdf.setFontSize(shape.fontSizeMm * MM_TO_PT * fontMul);
-      pdf.text(shape.text, cx, cy - tsm(shape.radiusMm) * 0.4, {
+      pdf.text(effectiveText, cx, cy - tsm(shape.radiusMm) * 0.4, {
         align: 'center',
         baseline: 'middle',
       });

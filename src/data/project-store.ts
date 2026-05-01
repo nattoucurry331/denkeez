@@ -24,10 +24,18 @@ import { DEFAULT_GRID_CONFIG } from './types';
 import { computeWireLengthMm } from '../utils/wire-geometry';
 import { createDefaultLayers, pickFirstUserLayerId } from './layer-defaults';
 
+/** Phase 2-H: 配置モード時にプリセット情報を保持 (preset 経由で properties / text / scale を一括反映) */
+export interface PlacePresetInfo {
+  presetId: string;
+  defaultProperties: Record<string, PropertyValue>;
+  textOverride?: string;
+  scaleOverride?: number;
+}
+
 /** 操作モード。配置モード時は symbolType、スケール設定中は firstPointPx、配線モードは fromSymbolId と waypoints を保持する。 */
 export type EditorMode =
   | { kind: 'select' }
-  | { kind: 'place'; symbolType: string }
+  | { kind: 'place'; symbolType: string; preset?: PlacePresetInfo }
   | { kind: 'scale'; firstPointPx?: { x: number; y: number } | undefined }
   | {
       kind: 'wire';
@@ -78,7 +86,16 @@ export interface ProjectActions {
   markSaved: (filePath?: string) => void;
   setCurrentFilePath: (path: string | null) => void;
   // M3: シンボル CRUD
-  addSymbol: (symbolType: ProjectSymbol['type'], position: { x: number; y: number }) => void;
+  /** Phase 2-H: options で preset 由来のプロパティ・倍率・テキストを引き継ぐ */
+  addSymbol: (
+    symbolType: ProjectSymbol['type'],
+    position: { x: number; y: number },
+    options?: {
+      properties?: Record<string, PropertyValue>;
+      text?: string;
+      scale?: number;
+    },
+  ) => void;
   updateSymbolPosition: (id: string, position: { x: number; y: number }) => void;
   /** Phase 2-B2: シンボルのプロパティ (回路番号 / W数 等) を一括更新 */
   updateSymbolProperties: (id: string, properties: Record<string, PropertyValue>) => void;
@@ -93,7 +110,8 @@ export interface ProjectActions {
   selectAll: () => void;
   clearSelection: () => void;
   // M3: モード切替
-  enterPlaceMode: (symbolType: string) => void;
+  /** Phase 2-H: preset 引数があれば配置モードに preset を持たせる */
+  enterPlaceMode: (symbolType: string, preset?: PlacePresetInfo) => void;
   exitMode: () => void;
   // Phase 2-A2: グリッド
   toggleGrid: () => void;
@@ -262,7 +280,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
 
   setCurrentFilePath: (path) => set({ currentFilePath: path }),
 
-  addSymbol: (symbolType, position) => {
+  addSymbol: (symbolType, position, options) => {
     const current = get().project;
     // activeLayerId が現存しない可能性 (load 後 / undo 後) → fallback
     const targetLayerId = current.layers.some((l) => l.id === get().activeLayerId)
@@ -273,9 +291,17 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       type: symbolType,
       position,
       rotation: 0,
-      properties: {},
+      properties: options?.properties ? { ...options.properties } : {},
       layerId: targetLayerId,
     };
+    // Phase 2-H: preset 由来の text / scale を反映 (exactOptionalPropertyTypes 対応で
+    // 値があるときのみキー設定)
+    if (options?.text !== undefined && options.text !== '') {
+      newSymbol.text = options.text;
+    }
+    if (options?.scale !== undefined && options.scale > 0) {
+      newSymbol.scale = options.scale;
+    }
     set({
       project: {
         ...current,
@@ -398,9 +424,11 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
 
   clearSelection: () => set({ selectedIds: [] }),
 
-  enterPlaceMode: (symbolType) =>
+  enterPlaceMode: (symbolType, preset) =>
     set({
-      mode: { kind: 'place', symbolType },
+      mode: preset
+        ? { kind: 'place', symbolType, preset }
+        : { kind: 'place', symbolType },
       selectedIds: [],
     }),
 

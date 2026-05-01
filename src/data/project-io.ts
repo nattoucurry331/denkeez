@@ -126,11 +126,9 @@ function canonicalizeSymbol(s: ParsedSymbol, fallbackLayerId: string): ProjectSy
     properties: s.properties,
     layerId: s.layerId ?? fallbackLayerId,
   };
-  // Phase 2-G3a: scale は optional のため、定義されている場合のみ付与
-  // (exactOptionalPropertyTypes で undefined の代入を避けるため)
-  if (s.scale !== undefined) {
-    result.scale = s.scale;
-  }
+  // Phase 2-G3a / 2-H: optional フィールドはキー省略 (exactOptionalPropertyTypes 対応)
+  if (s.scale !== undefined) result.scale = s.scale;
+  if (s.text !== undefined) result.text = s.text;
   return result;
 }
 

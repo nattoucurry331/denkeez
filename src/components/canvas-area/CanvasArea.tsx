@@ -383,10 +383,22 @@ export function CanvasArea(): JSX.Element {
     }
 
     if (mode.kind === 'place') {
-      addSymbol(mode.symbolType as SymbolType, {
+      // Phase 2-H: preset 由来の properties / text / scale を addSymbol に渡す
+      const positionMm = {
         x: pxToMm(point.x, scaleObj),
         y: pxToMm(point.y, scaleObj),
-      });
+      };
+      const opts: {
+        properties?: Record<string, import('../../data/types').PropertyValue>;
+        text?: string;
+        scale?: number;
+      } = {};
+      if (mode.preset) {
+        opts.properties = mode.preset.defaultProperties;
+        if (mode.preset.textOverride !== undefined) opts.text = mode.preset.textOverride;
+        if (mode.preset.scaleOverride !== undefined) opts.scale = mode.preset.scaleOverride;
+      }
+      addSymbol(mode.symbolType as SymbolType, positionMm, opts);
     } else if (e.target === stage) {
       clearSelection();
     }
