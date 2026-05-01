@@ -25,6 +25,7 @@ import {
   PdfExportDialog,
   type PdfExportSettings,
 } from '../dialogs/PdfExportDialog';
+import { AboutDialog } from '../dialogs/AboutDialog';
 import { useUpdaterStore } from '../../data/updater-store';
 import { useRenderSettingsStore } from '../../data/render-settings-store';
 
@@ -61,6 +62,9 @@ export function MenuBar(): JSX.Element {
   // Phase 2-G1: シンボル背景の透過/不透過 トグル
   const symbolTransparent = useRenderSettingsStore((s) => s.symbolTransparent);
   const toggleSymbolTransparent = useRenderSettingsStore((s) => s.toggleSymbolTransparent);
+
+  // Phase 2-G2: About / 免責ダイアログ
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const wrap = async (fn: () => Promise<void>): Promise<void> => {
     setError(null);
@@ -301,6 +305,14 @@ export function MenuBar(): JSX.Element {
       >
         (テスト) dirty: {dirty ? 'true' : 'false'}
       </button>
+      <button
+        onClick={() => setAboutOpen(true)}
+        type="button"
+        title="バージョン情報・ライセンス・免責事項・連絡先"
+        style={helpButtonStyle}
+      >
+        ヘルプ
+      </button>
       {currentFilePath && (
         <span style={pathStyle} title={currentFilePath}>
           {basename(currentFilePath)}
@@ -335,6 +347,7 @@ export function MenuBar(): JSX.Element {
           onCancel={() => setPdfDialogOpen(false)}
         />
       )}
+      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </header>
   );
 }
@@ -392,4 +405,7 @@ const updateBadgeStyle: React.CSSProperties = {
   color: '#5a4400',
   cursor: 'pointer',
   fontWeight: 'bold',
+};
+const helpButtonStyle: React.CSSProperties = {
+  background: '#f5f5f5',
 };

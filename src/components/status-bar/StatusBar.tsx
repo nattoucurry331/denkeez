@@ -5,6 +5,7 @@
 import { useProjectStore } from '../../data/project-store';
 import { useViewportStore } from '../../data/viewport-store';
 import { DEFAULT_GRID_CONFIG, GRID_SPACING_OPTIONS } from '../../data/types';
+import { APP_VERSION } from '../../shared/constants/app';
 
 function computeScaleRatio(
   drawing: {
@@ -75,6 +76,10 @@ export function StatusBar(): JSX.Element {
           </option>
         ))}
       </select>
+      <span style={spacerStyle} />
+      <span style={betaNoticeStyle} title="ヘルプを開いて詳細を確認してください">
+        v{APP_VERSION}・<span style={betaTagStyle}>β 版</span>・最終確認はご自身で
+      </span>
     </footer>
   );
 }
@@ -98,4 +103,21 @@ const separator: React.CSSProperties = { color: '#aaa', margin: '0 4px' };
 const selectStyle: React.CSSProperties = {
   fontSize: '0.75rem',
   padding: '0 4px',
+};
+const spacerStyle: React.CSSProperties = {
+  flex: 1,
+};
+const betaNoticeStyle: React.CSSProperties = {
+  fontSize: '0.72rem',
+  color: '#888',
+  fontVariantNumeric: 'tabular-nums',
+};
+const betaTagStyle: React.CSSProperties = {
+  display: 'inline-block',
+  padding: '0 6px',
+  background: '#fff8e0',
+  border: '1px solid #f0a000',
+  borderRadius: 8,
+  color: '#5a4400',
+  fontWeight: 'bold',
 };
