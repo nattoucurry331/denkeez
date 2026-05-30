@@ -4,6 +4,7 @@
 
 import { ask, open, save } from '@tauri-apps/plugin-dialog';
 import { readFile, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { APP_FILE_EXTENSION } from '../shared/constants/app';
 
 /**
@@ -90,6 +91,19 @@ export async function writeProjectFile(path: string, content: string): Promise<v
 /** バイナリファイル書込 (M5: PDF 出力用)。 */
 export async function writeBinaryFile(path: string, data: Uint8Array): Promise<void> {
   await writeFile(path, data);
+}
+
+/**
+ * Phase 2-I3: メーカー公式ページを既定ブラウザで開く。
+ * capabilities/default.json の opener:allow-open-url で許可ドメインを制限済み。
+ * Tauri 非提供環境 (Web preview) では例外を握りつぶす。
+ */
+export async function openExternalUrl(url: string): Promise<void> {
+  try {
+    await openUrl(url);
+  } catch {
+    // dev サーバ等の Tauri 未提供環境: 何もしない (UI は壊さない)
+  }
 }
 
 /** Windows / Unix 両対応のファイル名抽出。 */

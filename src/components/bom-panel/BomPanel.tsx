@@ -116,7 +116,11 @@ export function BomPanel(): JSX.Element {
             <table style={tableStyle}>
               <tbody>
                 {report.symbolRows.map((row) => {
-                  const name = getSymbolDefinition(row.type)?.name ?? row.type;
+                  // Phase 2-I: 画像シンボルは「商品」表示 (spec に メーカー+品番 が入る)
+                  const name =
+                    row.type === 'product-image'
+                      ? '商品'
+                      : (getSymbolDefinition(row.type)?.name ?? row.type);
                   return (
                     <tr key={`${row.type}|${row.spec}`}>
                       <td style={tdNameStyle}>

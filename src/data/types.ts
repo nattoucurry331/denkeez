@@ -76,7 +76,7 @@ export const STANDARD_USER_LAYER_PRESETS: ReadonlyArray<{ name: string; color: s
   { name: '寸法・注記', color: '#666666' },
 ];
 
-/** Phase 2-B: 主要 20 種の JIS C 0303 シンボル種別 */
+/** Phase 2-B: 主要 20 種の JIS C 0303 シンボル種別 + Phase 2-I: 画像シンボル */
 export type SymbolType =
   // 照明 (6)
   | 'general-light' | 'downlight' | 'fluorescent' | 'ceiling-light'
@@ -88,7 +88,20 @@ export type SymbolType =
   // 弱電・通信 (3)
   | 'tv-outlet' | 'lan-outlet' | 'phone-outlet'
   // その他 (2)
-  | 'ventilation-fan' | 'smoke-detector';
+  | 'ventilation-fan' | 'smoke-detector'
+  // Phase 2-I: メーカー商品画像シンボル (JIS 記号ではなく画像で描画。symbol-registry に
+  //   shape 定義を持たず、ProjectSymbol.image を直接描画する特別種別)
+  | 'product-image';
+
+/** Phase 2-I: product-image シンボルが保持する画像データ。 */
+export interface SymbolImage {
+  /** base64 dataURL (取込時にダウンスケール済みの JPEG/PNG) */
+  dataUrl: string;
+  /** 画像の縦横比 (width / height)。高さは widthMm / aspectRatio で算出 */
+  aspectRatio: number;
+  /** 図面上の表示幅 (mm)。位置と同じく紙面 mm 系で扱う */
+  widthMm: number;
+}
 
 export type SymbolCategory = 'lighting' | 'switch' | 'outlet' | 'low-voltage' | 'other';
 
@@ -117,6 +130,12 @@ export interface ProjectSymbol {
    * 未指定 (undefined) なら shape.text をそのまま使用 (後方互換)。
    */
   text?: string;
+  /**
+   * Phase 2-I: メーカー商品の画像データ。type === 'product-image' のとき必須。
+   * 設定されていれば JIS ベクター記号の代わりにこの画像を描画する。
+   * 品番・メーカー・規格は properties に格納 (partNumber / maker / spec)。
+   */
+  image?: SymbolImage;
 }
 
 /**
@@ -146,6 +165,11 @@ export interface SymbolPreset {
   textOverride?: string;
   /** 個別サイズ倍率 (0.5〜3.0、未指定なら 1.0) */
   scaleOverride?: number;
+  /**
+   * Phase 2-I: 商品画像プリセットの画像 (baseType === 'product-image' のとき)。
+   * 配置時に ProjectSymbol.image へ展開される (widthMm は配置側の既定値を使う)。
+   */
+  image?: { dataUrl: string; aspectRatio: number };
 }
 
 /** Phase 2-A2 / 2-C 拡張: グリッド表示設定 (Project に永続化) */

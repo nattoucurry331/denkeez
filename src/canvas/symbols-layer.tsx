@@ -6,13 +6,14 @@
 // Phase 2-B3: 単一選択シンボルに Konva Transformer (回転ハンドルのみ) を attach。
 
 import { useEffect, useRef } from 'react';
-import { Layer, Group, Rect, Transformer } from 'react-konva';
+import { Layer, Group, Rect, Transformer, Image as KonvaImage } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type Konva from 'konva';
 import { useProjectStore } from '../data/project-store';
 import { mmToPx, pxToMm, type Scale } from '../utils/coordinate';
 import { getSymbolDefinition } from '../symbols/symbol-registry';
 import { SymbolShapeRenderer, getShapeBoundingBox } from './symbol-shape';
+import { useImageElement } from './use-image-element';
 import { lockedLayerIds, sortSymbolsByLayerOrder, getLayerColor } from '../data/layer-helpers';
 import {
   useRenderSettingsStore,
@@ -185,15 +186,27 @@ function SymbolNode({
   onDragEnd,
   onTransformEnd,
 }: SymbolNodeProps): JSX.Element | null {
+  // Phase 2-I: 画像シンボルは registry に shape を持たないので、hook は常に呼ぶ
+  const imageEl = useImageElement(symbol.image?.dataUrl);
+  const isImage = symbol.image !== undefined;
   const def = getSymbolDefinition(symbol.type);
-  if (!def) {
+  if (!isImage && !def) {
     return null;
   }
   // 位置は実寸 mm 系 (校正済みなら実寸、未校正なら紙面)
   const x = mmToPx(symbol.position.x, scale);
   const y = mmToPx(symbol.position.y, scale);
-  // 形状サイズは常に紙面 mm 系 (記号は縮尺に依存せず一定の見やすさを保つ)
-  const bbox = getShapeBoundingBox(def.shape, paperScale);
+  // bounding box (選択枠 / Transformer 用)。画像は widthMm × (widthMm/aspectRatio)、
+  // それ以外は registry shape の bbox。いずれも紙面 mm 系。
+  const bbox =
+    isImage && symbol.image
+      ? {
+          width: mmToPx(symbol.image.widthMm, paperScale),
+          height: mmToPx(symbol.image.widthMm, paperScale) / symbol.image.aspectRatio,
+        }
+      : def
+        ? getShapeBoundingBox(def.shape, paperScale)
+        : { width: 0, height: 0 };
 
   const handleClick = (e: KonvaEventObject<MouseEvent>) => {
     if (wireModeActive) {
@@ -231,13 +244,37 @@ function SymbolNode({
         onTransformEnd(rot);
       }}
     >
-      <SymbolShapeRenderer
-        shape={def.shape}
-        scale={paperScale}
-        strokeColor={strokeColor}
-        transparent={transparent}
-        textOverride={textOverride}
-      />
+      {isImage && symbol.image ? (
+        imageEl ? (
+          <KonvaImage
+            image={imageEl}
+            x={-bbox.width / 2}
+            y={-bbox.height / 2}
+            width={bbox.width}
+            height={bbox.height}
+          />
+        ) : (
+          // ロード中 / ロード失敗時のプレースホルダ枠
+          <Rect
+            x={-bbox.width / 2}
+            y={-bbox.height / 2}
+            width={bbox.width}
+            height={bbox.height}
+            stroke="#888"
+            strokeWidth={1}
+            dash={[4, 2]}
+            fill="rgba(255,255,255,0.5)"
+          />
+        )
+      ) : def ? (
+        <SymbolShapeRenderer
+          shape={def.shape}
+          scale={paperScale}
+          strokeColor={strokeColor}
+          transparent={transparent}
+          textOverride={textOverride}
+        />
+      ) : null}
       {selected && (
         <Rect
           x={-bbox.width / 2 - 3}

@@ -76,4 +76,4 @@ package-lock.json.bak
 yarn.lock.bak
 
 # ----- Claude Code ローカル設定 -----
-.claude/settings.local.json
+.claude/

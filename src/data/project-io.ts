@@ -126,9 +126,10 @@ function canonicalizeSymbol(s: ParsedSymbol, fallbackLayerId: string): ProjectSy
     properties: s.properties,
     layerId: s.layerId ?? fallbackLayerId,
   };
-  // Phase 2-G3a / 2-H: optional フィールドはキー省略 (exactOptionalPropertyTypes 対応)
+  // Phase 2-G3a / 2-H / 2-I: optional フィールドはキー省略 (exactOptionalPropertyTypes 対応)
   if (s.scale !== undefined) result.scale = s.scale;
   if (s.text !== undefined) result.text = s.text;
+  if (s.image !== undefined) result.image = s.image;
   return result;
 }
 

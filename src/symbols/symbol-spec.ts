@@ -13,6 +13,10 @@ import { getSymbolDefinition } from './symbol-registry';
  * 戻り値が空文字なら「規格未指定」(プリセット未使用 + 個別プロパティ未入力)。
  */
 export function formatSymbolSpec(sym: ProjectSymbol): string {
+  // Phase 2-I: 画像シンボルは「メーカー 品番」(無ければ規格 or 表示名) で集計
+  if (sym.type === 'product-image') {
+    return formatProduct(sym.properties);
+  }
   const def = getSymbolDefinition(sym.type);
   if (!def) return formatGeneric(sym.properties);
   const p = sym.properties;
@@ -65,6 +69,15 @@ function formatOutlet200V(p: Readonly<Record<string, PropertyValue>>): string {
 function formatGeneric(p: Readonly<Record<string, PropertyValue>>): string {
   const model = readString(p.model);
   return model ?? '';
+}
+
+/** Phase 2-I: 画像シンボルの規格 = 「メーカー 品番」(無ければ規格)。 */
+function formatProduct(p: Readonly<Record<string, PropertyValue>>): string {
+  const maker = readString(p.maker);
+  const part = readString(p.partNumber);
+  const joined = [maker, part].filter((s): s is string => s !== null).join(' ');
+  if (joined) return joined;
+  return readString(p.spec) ?? '';
 }
 
 function readString(v: PropertyValue | undefined): string | null {
