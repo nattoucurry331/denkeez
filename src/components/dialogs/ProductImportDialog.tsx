@@ -23,12 +23,16 @@ import { openExternalUrl } from '../../tauri/api';
  */
 function officialSearchUrl(maker: string, partNumber: string): string {
   const q = partNumber.trim();
-  if (maker.includes('Panasonic') || maker.toLowerCase().includes('panasonic')) {
-    // Panasonic 品番情報検索 (品番をクエリに付与。正確なパラメータは将来見直し)
-    return `https://www2.panasonic.biz/jp/products/category/search.html?q=${encodeURIComponent(q)}`;
+  const isPana = maker.toLowerCase().includes('panasonic') || maker.includes('Panasonic');
+  if (isPana) {
+    // Panasonic 品番情報検索。品番が空ならカテゴリ検索トップを開く (カタログを見て品番を調べる導線)
+    return q === ''
+      ? 'https://www2.panasonic.biz/jp/products/category/search.html'
+      : `https://www2.panasonic.biz/jp/products/category/search.html?q=${encodeURIComponent(q)}`;
   }
-  // その他メーカー: Web 検索にフォールバック
-  return `https://www.google.com/search?q=${encodeURIComponent(`${maker} ${q}`)}`;
+  // その他メーカー: Web 検索にフォールバック (品番が空ならメーカー名のみ)
+  const term = q === '' ? maker : `${maker} ${q}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(term.trim())}`;
 }
 
 /** 配置時のデフォルト表示幅 (紙面 mm)。JIS 記号 (φ5mm 円) より少し大きめ */
@@ -180,10 +184,16 @@ export function ProductImportDialog({
                 />
                 <button
                   type="button"
-                  onClick={() => void openExternalUrl(officialSearchUrl(maker, partNumber))}
-                  disabled={partNumber.trim() === ''}
+                  onClick={() => {
+                    setError(null);
+                    openExternalUrl(officialSearchUrl(maker, partNumber)).catch((e: unknown) => {
+                      setError(
+                        `公式ページを開けませんでした: ${e instanceof Error ? e.message : String(e)}`,
+                      );
+                    });
+                  }}
                   style={officialBtnStyle}
-                  title="公式サイトの品番ページをブラウザで開く (画像はそこから保存して取り込んでください)"
+                  title="公式サイトをブラウザで開く (品番を入れると検索、空ならカタログ検索トップ)"
                 >
                   🔍 公式ページを開く
                 </button>

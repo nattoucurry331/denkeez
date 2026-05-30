@@ -96,13 +96,25 @@ export async function writeBinaryFile(path: string, data: Uint8Array): Promise<v
 /**
  * Phase 2-I3: メーカー公式ページを既定ブラウザで開く。
  * capabilities/default.json の opener:allow-open-url で許可ドメインを制限済み。
- * Tauri 非提供環境 (Web preview) では例外を握りつぶす。
+ *
+ * Tauri 非提供環境 (Web preview / vite dev) では openUrl が無いので何もしない。
+ * Tauri 環境で失敗した場合は例外を呼び出し側へ伝播する (UI でエラー表示するため。
+ * 以前は握りつぶしていて「クリックしても無反応」の原因が分からなかった)。
  */
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
 export async function openExternalUrl(url: string): Promise<void> {
-  try {
+  if (isTauri()) {
+    // Tauri 本体: opener プラグイン (capabilities の許可ドメインのみ)
     await openUrl(url);
-  } catch {
-    // dev サーバ等の Tauri 未提供環境: 何もしない (UI は壊さない)
+    return;
+  }
+  // 非 Tauri (ブラウザで dev URL を直接開いている場合) は window.open で代替。
+  // → Chrome の開発プレビューでも公式ページボタンが動くようにする。
+  if (typeof window !== 'undefined' && typeof window.open === 'function') {
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 }
 

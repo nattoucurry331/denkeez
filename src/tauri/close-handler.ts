@@ -22,6 +22,11 @@ export function registerCloseConfirmHandler(handler: CloseConfirmHandler): void 
  * 戻り値はリスナ解除関数 (useEffect の cleanup で呼ぶ)。
  */
 export async function setupCloseHandler(): Promise<() => void> {
+  // 非 Tauri (ブラウザで dev URL を直接開いた場合) は IPC が無く getCurrentWindow が
+  // 失敗するので no-op を返す (Chrome プレビュー時の uncaught エラーを防ぐ)。
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+    return () => {};
+  }
   const appWindow = getCurrentWindow();
   return appWindow.onCloseRequested(async (event) => {
     if (!isDirty()) {
