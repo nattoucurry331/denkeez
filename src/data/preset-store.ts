@@ -33,6 +33,20 @@ function readInitial(): SymbolPreset[] {
       if (typeof o.scaleOverride === 'number' && Number.isFinite(o.scaleOverride) && o.scaleOverride > 0) {
         preset.scaleOverride = o.scaleOverride;
       }
+      // Phase 2-I: 商品画像プリセット (dataUrl は data:image/ のみ受理)
+      if (
+        typeof o.image === 'object' &&
+        o.image !== null &&
+        typeof (o.image as Record<string, unknown>).dataUrl === 'string' &&
+        ((o.image as Record<string, unknown>).dataUrl as string).startsWith('data:image/') &&
+        typeof (o.image as Record<string, unknown>).aspectRatio === 'number'
+      ) {
+        const im = o.image as Record<string, unknown>;
+        preset.image = {
+          dataUrl: im.dataUrl as string,
+          aspectRatio: im.aspectRatio as number,
+        };
+      }
       out.push(preset);
     }
     return out;
@@ -75,6 +89,8 @@ export const usePresetStore = create<PresetState>((set, get) => ({
     };
     if (input.textOverride !== undefined) preset.textOverride = input.textOverride;
     if (input.scaleOverride !== undefined) preset.scaleOverride = input.scaleOverride;
+    // Phase 2-I: 商品画像プリセット
+    if (input.image !== undefined) preset.image = input.image;
     const next = [...get().presets, preset];
     persist(next);
     set({ presets: next });

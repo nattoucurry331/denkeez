@@ -102,6 +102,8 @@ export interface ProjectActions {
   updateSymbolPosition: (id: string, position: { x: number; y: number }) => void;
   /** Phase 2-B2: シンボルのプロパティ (回路番号 / W数 等) を一括更新 */
   updateSymbolProperties: (id: string, properties: Record<string, PropertyValue>) => void;
+  /** Phase 2-I: 画像シンボルの表示幅 (mm) を更新 */
+  updateSymbolImageWidth: (id: string, widthMm: number) => void;
   /** Phase 2-B3: シンボルの回転角度を更新 (Transformer から呼ばれる) */
   updateSymbolRotation: (id: string, rotation: number) => void;
   /** Phase 2-B3: 複数シンボルを一括で delta 移動 (矢印キー用) */
@@ -346,6 +348,22 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         ...current,
         symbols: current.symbols.map((s) =>
           s.id === id ? { ...s, properties: { ...properties } } : s,
+        ),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  // Phase 2-I: 画像シンボルの表示幅 (mm) を更新 (image を持つ symbol のみ効く)
+  updateSymbolImageWidth: (id, widthMm) => {
+    if (!(widthMm > 0)) return;
+    const current = get().project;
+    set({
+      project: {
+        ...current,
+        symbols: current.symbols.map((s) =>
+          s.id === id && s.image ? { ...s, image: { ...s.image, widthMm } } : s,
         ),
         meta: { ...current.meta, updatedAt: nowIso() },
       },

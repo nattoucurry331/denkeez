@@ -11,7 +11,7 @@ import { PropertyField } from './PropertyField';
 import { EmptyPropertyPanel } from './EmptyPropertyPanel';
 import { WirePropertyForm } from './WirePropertyForm';
 import { LayerSelector } from './LayerSelector';
-import type { PropertyValue } from '../../data/types';
+import type { ProjectSymbol, PropertyValue } from '../../data/types';
 
 export function PropertyPanel(): JSX.Element {
   const selectedIds = useProjectStore((s) => s.selectedIds);
@@ -52,6 +52,11 @@ export function PropertyPanel(): JSX.Element {
     return <EmptyPropertyPanel message="選択されたエンティティが見つかりません" />;
   }
 
+  // Phase 2-I: 画像シンボルは専用フォーム (品番/メーカー/規格 + 表示幅)
+  if (symbol.image) {
+    return <ProductPropertyForm symbol={symbol} />;
+  }
+
   const schema = getPropertySchema(symbol.type);
   const definition = getSymbolDefinition(symbol.type);
 
@@ -85,6 +90,111 @@ export function PropertyPanel(): JSX.Element {
     </div>
   );
 }
+
+/** Phase 2-I: 画像シンボル (メーカー商品) 用のプロパティフォーム */
+function ProductPropertyForm({ symbol }: { symbol: ProjectSymbol }): JSX.Element {
+  const updateSymbolProperties = useProjectStore((s) => s.updateSymbolProperties);
+  const updateSymbolImageWidth = useProjectStore((s) => s.updateSymbolImageWidth);
+
+  const readStr = (key: string): string => {
+    const v = symbol.properties[key];
+    return typeof v === 'string' ? v : '';
+  };
+  const setProp = (key: string, value: string): void => {
+    updateSymbolProperties(symbol.id, { ...symbol.properties, [key]: value });
+  };
+
+  return (
+    <div style={containerStyle}>
+      <h2 style={headingStyle}>商品プロパティ</h2>
+      {symbol.image && (
+        <img src={symbol.image.dataUrl} alt="商品画像" style={productPreviewStyle} />
+      )}
+      <p style={mutedStyle}>
+        位置: {symbol.position.x.toFixed(0)}, {symbol.position.y.toFixed(0)} mm
+      </p>
+      <hr style={hrStyle} />
+      <LayerSelector kind="symbol" currentLayerId={symbol.layerId} entityId={symbol.id} />
+      <hr style={hrStyle} />
+
+      <ProductTextField label="メーカー" value={readStr('maker')} onChange={(v) => setProp('maker', v)} placeholder="Panasonic" />
+      <ProductTextField label="品番" value={readStr('partNumber')} onChange={(v) => setProp('partNumber', v)} placeholder="LGB12345" />
+      <ProductTextField label="規格" value={readStr('spec')} onChange={(v) => setProp('spec', v)} placeholder="LED 7W φ100" />
+
+      <div style={fieldStyle}>
+        <label htmlFor="pp-width" style={fieldLabelStyle}>表示幅 (mm)</label>
+        <input
+          id="pp-width"
+          type="number"
+          min={2}
+          max={200}
+          step={1}
+          value={symbol.image ? Math.round(symbol.image.widthMm) : 0}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            if (Number.isFinite(v) && v > 0) updateSymbolImageWidth(symbol.id, v);
+          }}
+          style={fieldInputStyle}
+        />
+      </div>
+      <p style={mutedStyle}>
+        拾い出しでは「メーカー + 品番」で別行集計されます。
+      </p>
+    </div>
+  );
+}
+
+function ProductTextField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}): JSX.Element {
+  return (
+    <div style={fieldStyle}>
+      <label style={fieldLabelStyle}>{label}</label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={fieldInputStyle}
+      />
+    </div>
+  );
+}
+
+const productPreviewStyle: React.CSSProperties = {
+  maxWidth: '100%',
+  maxHeight: 120,
+  objectFit: 'contain',
+  border: '1px solid #ddd',
+  borderRadius: 4,
+  background: '#fff',
+  alignSelf: 'center',
+};
+const fieldStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+  marginBottom: 8,
+};
+const fieldLabelStyle: React.CSSProperties = {
+  fontSize: '0.78rem',
+  color: '#444',
+  fontWeight: 'bold',
+};
+const fieldInputStyle: React.CSSProperties = {
+  fontSize: '0.85rem',
+  padding: '4px 6px',
+  border: '1px solid #ccc',
+  borderRadius: 3,
+};
 
 const containerStyle: React.CSSProperties = {
   padding: '12px 12px',

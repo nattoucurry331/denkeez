@@ -13,6 +13,10 @@ import {
 } from '../../symbols/symbol-registry';
 import type { SymbolCategory, SymbolPreset } from '../../data/types';
 import { PresetEditorDialog } from '../dialogs/PresetEditorDialog';
+import {
+  ProductImportDialog,
+  type ProductImportResult,
+} from '../dialogs/ProductImportDialog';
 
 export function SymbolPalette(): JSX.Element {
   const mode = useProjectStore((s) => s.mode);
@@ -23,6 +27,9 @@ export function SymbolPalette(): JSX.Element {
   const addPreset = usePresetStore((s) => s.addPreset);
   const updatePreset = usePresetStore((s) => s.updatePreset);
   const removePreset = usePresetStore((s) => s.removePreset);
+
+  // Phase 2-I2: メーカー商品取込ダイアログ
+  const [productImportOpen, setProductImportOpen] = useState(false);
 
   // カテゴリ折りたたみの開閉状態 (初期: 全開)
   const [expanded, setExpanded] = useState<Record<SymbolCategory, boolean>>({
@@ -46,7 +53,40 @@ export function SymbolPalette(): JSX.Element {
     };
     if (preset.textOverride !== undefined) presetInfo.textOverride = preset.textOverride;
     if (preset.scaleOverride !== undefined) presetInfo.scaleOverride = preset.scaleOverride;
+    if (preset.image !== undefined) presetInfo.image = preset.image;
     enterPlaceMode(preset.baseType, presetInfo);
+  };
+
+  // Phase 2-I2: 取込結果 → product-image 配置モードへ
+  const productResultToPresetInfo = (
+    r: ProductImportResult,
+  ): import('../../data/project-store').PlacePresetInfo => ({
+    presetId: `product:${r.partNumber || r.displayName}`,
+    defaultProperties: {
+      maker: r.maker,
+      partNumber: r.partNumber,
+      ...(r.spec ? { spec: r.spec } : {}),
+    },
+    image: { dataUrl: r.image.dataUrl, aspectRatio: r.image.aspectRatio },
+  });
+
+  const handleProductPlace = (r: ProductImportResult): void => {
+    enterPlaceMode('product-image', productResultToPresetInfo(r));
+    setProductImportOpen(false);
+  };
+
+  const handleProductSavePreset = (r: ProductImportResult): void => {
+    addPreset({
+      baseType: 'product-image',
+      displayName: r.displayName,
+      defaultProperties: {
+        maker: r.maker,
+        partNumber: r.partNumber,
+        ...(r.spec ? { spec: r.spec } : {}),
+      },
+      image: { dataUrl: r.image.dataUrl, aspectRatio: r.image.aspectRatio },
+    });
+    setProductImportOpen(false);
   };
 
   const isPresetActive = (preset: SymbolPreset): boolean =>
@@ -104,6 +144,7 @@ export function SymbolPalette(): JSX.Element {
             ) : (
               presets.map((p) => {
                 const active = isPresetActive(p);
+                const isImagePreset = p.baseType === 'product-image' && p.image !== undefined;
                 return (
                   <li key={p.id} style={presetItemStyle}>
                     <button
@@ -115,17 +156,23 @@ export function SymbolPalette(): JSX.Element {
                       }}
                       title={`${p.displayName} を配置`}
                     >
-                      {p.displayName}
+                      {isImagePreset && p.image && (
+                        <img src={p.image.dataUrl} alt="" style={presetThumbStyle} />
+                      )}
+                      <span style={presetLabelStyle}>{p.displayName}</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => openEditorEdit(p)}
-                      style={presetEditIconStyle}
-                      title="編集"
-                      aria-label={`${p.displayName} を編集`}
-                    >
-                      ✎
-                    </button>
+                    {/* 画像プリセットは PresetEditorDialog 非対応のため編集アイコンを出さない */}
+                    {!isImagePreset && (
+                      <button
+                        type="button"
+                        onClick={() => openEditorEdit(p)}
+                        style={presetEditIconStyle}
+                        title="編集"
+                        aria-label={`${p.displayName} を編集`}
+                      >
+                        ✎
+                      </button>
+                    )}
                   </li>
                 );
               })
@@ -133,6 +180,16 @@ export function SymbolPalette(): JSX.Element {
             <li>
               <button type="button" onClick={openEditorNew} style={addPresetButtonStyle}>
                 + プリセット作成
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                onClick={() => setProductImportOpen(true)}
+                style={addProductButtonStyle}
+                title="メーカー品番の商品画像を取り込んで配置/プリセット保存"
+              >
+                📷 メーカー商品を取込
               </button>
             </li>
           </ul>
@@ -192,6 +249,12 @@ export function SymbolPalette(): JSX.Element {
         onSave={handleSave}
         {...(editingPreset ? { onDelete: handleDelete } : {})}
         onCancel={() => setEditorOpen(false)}
+      />
+      <ProductImportDialog
+        open={productImportOpen}
+        onPlace={handleProductPlace}
+        onSavePreset={handleProductSavePreset}
+        onCancel={() => setProductImportOpen(false)}
       />
     </aside>
   );
@@ -270,6 +333,35 @@ const presetButtonStyle: React.CSSProperties = {
   border: '1px solid #ddc090',
   borderRadius: 3,
   fontSize: '0.82rem',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  minWidth: 0,
+};
+const presetThumbStyle: React.CSSProperties = {
+  width: 22,
+  height: 22,
+  objectFit: 'contain',
+  borderRadius: 2,
+  background: '#fff',
+  flexShrink: 0,
+};
+const presetLabelStyle: React.CSSProperties = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+const addProductButtonStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '4px 8px',
+  textAlign: 'center',
+  cursor: 'pointer',
+  background: 'rgba(0,128,255,0.06)',
+  border: '1px dashed #0080ff',
+  borderRadius: 3,
+  fontSize: '0.78rem',
+  color: '#0066cc',
+  marginTop: 2,
 };
 const presetEditIconStyle: React.CSSProperties = {
   width: 22,
