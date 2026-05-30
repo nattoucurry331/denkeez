@@ -17,7 +17,15 @@
 // 結果として svg2pdf 依存は実際には未使用 (将来 SVG パスシンボルを追加した際に再導入予定)。
 
 import jsPDF from 'jspdf';
-import type { Layer, Project, ProjectSymbol, SymbolType, Wire, WireType } from '../data/types';
+import type {
+  Layer,
+  Project,
+  ProjectSymbol,
+  SymbolImage,
+  SymbolType,
+  Wire,
+  WireType,
+} from '../data/types';
 import { BACKGROUND_LAYER_ID } from '../data/types';
 import { getSymbolDefinition, type SymbolShape } from '../symbols/symbol-registry';
 import { getWirePoints } from '../utils/wire-geometry';
@@ -137,15 +145,20 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
   const globalSizeScale = options.globalSizeScale ?? 1.0;
   const typeScales = options.typeScales ?? {};
   for (const symbol of visibleSymbols) {
-    const def = getSymbolDefinition(symbol.type);
-    if (!def) continue;
-    const color = getLayerColor(symbol.layerId, project.layers);
     const sizeMultiplier = computeEffectiveSymbolScale(
       globalSizeScale,
       typeScales,
       symbol.type,
       symbol.scale,
     );
+    // Phase 2-I: 画像シンボルは addImage で描画 (registry shape を持たない)
+    if (symbol.image) {
+      drawImageSymbol(pdf, symbol.image, symbol.position, sizeMultiplier, tx, ty, ts);
+      continue;
+    }
+    const def = getSymbolDefinition(symbol.type);
+    if (!def) continue;
+    const color = getLayerColor(symbol.layerId, project.layers);
     drawSymbol(
       pdf,
       symbol,
@@ -377,6 +390,40 @@ function drawWires(
 export function getWirePdfStyle(type: WireType): WireStyle {
   const dash = dashForWireType(type);
   return dash !== undefined ? { dash } : {};
+}
+
+// -----------------------------------------------------------------------------
+// 画像シンボル描画 (Phase 2-I)
+// -----------------------------------------------------------------------------
+
+/** dataURL の MIME から jsPDF の addImage フォーマット文字列を判定 */
+function imageFormatOf(dataUrl: string): 'JPEG' | 'PNG' {
+  return dataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+}
+
+/**
+ * 商品画像シンボルを PDF に配置する。
+ * 位置は実寸 mm (tx/ty で PDF mm 化)、表示幅は紙面 mm × sizeMultiplier (ts で PDF mm 化)。
+ * 注: 現状 rotation は未対応 (ベクター記号と同じ制約。Phase 3 で matrix 回転を検討)。
+ */
+function drawImageSymbol(
+  pdf: jsPDF,
+  image: SymbolImage,
+  position: { x: number; y: number },
+  sizeMultiplier: number,
+  tx: (mm: number) => number,
+  ty: (mm: number) => number,
+  ts: (mm: number) => number,
+): void {
+  const cx = tx(position.x);
+  const cy = ty(position.y);
+  const w = ts(image.widthMm * sizeMultiplier);
+  const h = w / image.aspectRatio;
+  try {
+    pdf.addImage(image.dataUrl, imageFormatOf(image.dataUrl), cx - w / 2, cy - h / 2, w, h);
+  } catch {
+    // 不正な dataURL 等で addImage が失敗しても PDF 出力全体は止めない
+  }
 }
 
 // -----------------------------------------------------------------------------

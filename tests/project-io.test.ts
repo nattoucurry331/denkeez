@@ -77,6 +77,47 @@ describe('serializeProject / deserializeProject 往復', () => {
     const restored = deserializeProject(serializeProject(project));
     expect(restored.symbols).toEqual([]);
   });
+
+  // Phase 2-I: 画像シンボル (product-image) の往復
+  it('product-image シンボル (image フィールド) を往復で保持する', () => {
+    const project = makeProject({
+      symbols: [
+        {
+          id: 's-img-1',
+          type: 'product-image',
+          position: { x: 50, y: 60 },
+          rotation: 0,
+          properties: { maker: 'Panasonic', partNumber: 'LGB12345', spec: 'LED 7W' },
+          layerId: TEST_LAYER_ID,
+          image: {
+            dataUrl:
+              'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+            aspectRatio: 1.5,
+            widthMm: 30,
+          },
+        },
+      ],
+    });
+    const restored = deserializeProject(serializeProject(project));
+    expect(restored.symbols[0]?.type).toBe('product-image');
+    expect(restored.symbols[0]?.image?.widthMm).toBe(30);
+    expect(restored.symbols[0]?.image?.aspectRatio).toBe(1.5);
+    expect(restored.symbols[0]?.image?.dataUrl).toMatch(/^data:image\/png/);
+  });
+
+  it('image.dataUrl が data:image/ で始まらないと弾く (外部 URL 防止)', () => {
+    const obj = JSON.parse(serializeProject(makeProject())) as Record<string, unknown>;
+    (obj.symbols as Record<string, unknown>[])[0] = {
+      id: 's-bad',
+      type: 'product-image',
+      position: { x: 0, y: 0 },
+      rotation: 0,
+      properties: {},
+      layerId: TEST_LAYER_ID,
+      image: { dataUrl: 'https://example.com/x.png', aspectRatio: 1, widthMm: 10 },
+    };
+    expect(() => deserializeProject(JSON.stringify(obj))).toThrow(ProjectFileError);
+  });
 });
 
 describe('deserializeProject エラー処理', () => {

@@ -30,6 +30,8 @@ export interface PlacePresetInfo {
   defaultProperties: Record<string, PropertyValue>;
   textOverride?: string;
   scaleOverride?: number;
+  /** Phase 2-I: 商品画像プリセットの画像 (配置時に widthMm 既定値で ProjectSymbol.image へ展開) */
+  image?: { dataUrl: string; aspectRatio: number };
 }
 
 /** 操作モード。配置モード時は symbolType、スケール設定中は firstPointPx、配線モードは fromSymbolId と waypoints を保持する。 */
@@ -86,7 +88,7 @@ export interface ProjectActions {
   markSaved: (filePath?: string) => void;
   setCurrentFilePath: (path: string | null) => void;
   // M3: シンボル CRUD
-  /** Phase 2-H: options で preset 由来のプロパティ・倍率・テキストを引き継ぐ */
+  /** Phase 2-H/2-I: options で preset 由来のプロパティ・倍率・テキスト・画像を引き継ぐ */
   addSymbol: (
     symbolType: ProjectSymbol['type'],
     position: { x: number; y: number },
@@ -94,6 +96,7 @@ export interface ProjectActions {
       properties?: Record<string, PropertyValue>;
       text?: string;
       scale?: number;
+      image?: import('./types').SymbolImage;
     },
   ) => void;
   updateSymbolPosition: (id: string, position: { x: number; y: number }) => void;
@@ -301,6 +304,10 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
     }
     if (options?.scale !== undefined && options.scale > 0) {
       newSymbol.scale = options.scale;
+    }
+    // Phase 2-I: 商品画像
+    if (options?.image !== undefined) {
+      newSymbol.image = options.image;
     }
     set({
       project: {

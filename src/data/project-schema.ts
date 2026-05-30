@@ -32,7 +32,7 @@ const PointSchema = z.object({
   y: z.number().finite(),
 });
 
-// Phase 2-B: 20 種の SymbolType を厳格に検証
+// Phase 2-B: 20 種の SymbolType + Phase 2-I: product-image を厳格に検証
 const SymbolTypeSchema = z.enum([
   'general-light', 'downlight', 'fluorescent', 'ceiling-light',
   'pull-cord-ceiling', 'pendant-light',
@@ -40,7 +40,16 @@ const SymbolTypeSchema = z.enum([
   'outlet-general', 'outlet-waterproof', 'outlet-ground', 'outlet-200v',
   'tv-outlet', 'lan-outlet', 'phone-outlet',
   'ventilation-fan', 'smoke-detector',
+  'product-image',
 ]);
+
+// Phase 2-I: 画像シンボルのデータ。dataUrl は data: スキームの base64 のみ許可
+// (外部 URL を弾いて CSP / セキュリティ前提を守る)。
+const SymbolImageSchema = z.object({
+  dataUrl: z.string().regex(/^data:image\//, 'dataUrl は data:image/ で始まる必要があります'),
+  aspectRatio: z.number().positive().finite(),
+  widthMm: z.number().positive().finite(),
+});
 
 const PropertyValueSchema = z.union([z.string(), z.number().finite(), z.boolean()]);
 
@@ -57,6 +66,8 @@ const ProjectSymbolSchema = z.object({
   layerId: z.string().min(1).optional(),
   scale: z.number().positive().finite().optional(),
   text: z.string().optional(),
+  // Phase 2-I: 画像シンボル (product-image) のデータ
+  image: SymbolImageSchema.optional(),
 });
 
 const ProjectGridConfigSchema = z.object({
