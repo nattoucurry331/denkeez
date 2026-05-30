@@ -34,6 +34,7 @@ import {
 } from '../../data/layer-helpers';
 import { BACKGROUND_LAYER_ID } from '../../data/types';
 import { PRODUCT_IMAGE_DEFAULT_WIDTH_MM } from '../dialogs/ProductImportDialog';
+import { WelcomeScreen } from './WelcomeScreen';
 
 /** Konva の Node 階層を遡って `sym-XXX` の id を持つ祖先 (= シンボル Group) を探す */
 function findSymbolIdFromTarget(target: Konva.Node): string | null {
@@ -62,6 +63,7 @@ export function CanvasArea(): JSX.Element {
   const selectSymbols = useProjectStore((s) => s.selectSymbols);
   const setScaleFirstPoint = useProjectStore((s) => s.setScaleFirstPoint);
   const setScale = useProjectStore((s) => s.setScale);
+  const enterScaleMode = useProjectStore((s) => s.enterScaleMode);
   const setWireFromSymbol = useProjectStore((s) => s.setWireFromSymbol);
   const appendWireWaypoint = useProjectStore((s) => s.appendWireWaypoint);
   const addWire = useProjectStore((s) => s.addWire);
@@ -90,6 +92,8 @@ export function CanvasArea(): JSX.Element {
   });
   // 配線モード用カーソル位置 (canvas 論理座標)
   const [wireCursorPx, setWireCursorPx] = useState<{ x: number; y: number } | null>(null);
+  // Phase 2-J2: スケール未設定バナーを閉じたか (セッション内)
+  const [scaleBannerDismissed, setScaleBannerDismissed] = useState(false);
 
   useEffect(() => {
     if (!drawing) return;
@@ -192,12 +196,7 @@ export function CanvasArea(): JSX.Element {
   });
 
   if (!drawing) {
-    return (
-      <div style={emptyStyle}>
-        <p>「ファイル → PDF を開く」で開始してください</p>
-        <p style={mutedStyle}>または「開く」で保存済みプロジェクトを読み込めます</p>
-      </div>
-    );
+    return <WelcomeScreen />;
   }
 
   const infoLine = (
@@ -440,9 +439,37 @@ export function CanvasArea(): JSX.Element {
         ? 'crosshair'
         : 'default';
 
+  // Phase 2-J2: スケール未設定なら「まず縮尺を合わせましょう」を案内 (select モード時のみ)
+  const showScaleBanner =
+    !drawing.scale && !scaleBannerDismissed && mode.kind === 'select';
+
   return (
     <div style={containerStyle}>
       {infoLine}
+      {showScaleBanner && (
+        <div style={scaleBannerStyle}>
+          <span style={scaleBannerIconStyle} aria-hidden="true">📏</span>
+          <span style={scaleBannerTextStyle}>
+            まず<strong>縮尺を合わせましょう</strong>。図面の既知寸法 2 点をクリックして実寸を入れると、配線長や拾い出しが正確になります。
+          </span>
+          <button
+            type="button"
+            onClick={() => enterScaleMode()}
+            style={scaleBannerCtaStyle}
+          >
+            縮尺を設定
+          </button>
+          <button
+            type="button"
+            onClick={() => setScaleBannerDismissed(true)}
+            style={scaleBannerCloseStyle}
+            aria-label="閉じる"
+            title="閉じる"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <div ref={containerRef} style={stageContainerStyle}>
         <Minimap containerSize={containerSize} />
         <Stage
@@ -493,14 +520,39 @@ export function CanvasArea(): JSX.Element {
   );
 }
 
-const emptyStyle: React.CSSProperties = {
-  flex: 1,
+const scaleBannerStyle: React.CSSProperties = {
   display: 'flex',
-  flexDirection: 'column',
   alignItems: 'center',
-  justifyContent: 'center',
-  color: '#666',
-  gap: 8,
+  gap: 10,
+  padding: '8px 14px',
+  background: '#fff8e0',
+  borderBottom: '1px solid #f0d080',
+  fontSize: '0.85rem',
+  color: '#5a4400',
+};
+const scaleBannerIconStyle: React.CSSProperties = { fontSize: '1.1rem', flexShrink: 0 };
+const scaleBannerTextStyle: React.CSSProperties = { flex: 1, lineHeight: 1.5 };
+const scaleBannerCtaStyle: React.CSSProperties = {
+  flexShrink: 0,
+  padding: '5px 14px',
+  background: '#f0a000',
+  color: '#fff',
+  border: 'none',
+  borderRadius: 6,
+  fontSize: '0.82rem',
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+const scaleBannerCloseStyle: React.CSSProperties = {
+  flexShrink: 0,
+  width: 24,
+  height: 24,
+  padding: 0,
+  background: 'transparent',
+  border: 'none',
+  color: '#9a8000',
+  cursor: 'pointer',
+  fontSize: '0.9rem',
 };
 const mutedStyle: React.CSSProperties = {
   color: '#999',

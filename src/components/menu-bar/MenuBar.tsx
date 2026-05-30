@@ -5,20 +5,17 @@ import { useState } from 'react';
 import { useProjectStore } from '../../data/project-store';
 import { renderPdfPage, type Rotation } from '../../pdf/pdf-loader';
 import {
-  selectPdfFile,
-  selectProjectFileToOpen,
   selectProjectFileToSave,
   selectPdfFileToSave,
   selectCsvFileToSave,
-  readBinaryFile,
-  readProjectFile,
   writeProjectFile,
   writeBinaryFile,
   askConfirm,
   basename,
   ptToMm,
 } from '../../tauri/api';
-import { serializeProject, deserializeProject } from '../../data/project-io';
+import { serializeProject } from '../../data/project-io';
+import { openPdfIntoStore, openProjectIntoStore } from '../../tauri/open-actions';
 import { exportProjectAsPdf, suggestedExportName } from '../../export/pdf-exporter';
 import { generateBomCsv, suggestedBomCsvName } from '../../export/csv-exporter';
 import {
@@ -37,8 +34,6 @@ export function MenuBar(): JSX.Element {
   const pdfBuffer = useProjectStore((s) => s.pdfBuffer);
   const pdfRotation = useProjectStore((s) => s.pdfRotation);
   const mode = useProjectStore((s) => s.mode);
-  const loadPdf = useProjectStore((s) => s.loadPdf);
-  const loadProject = useProjectStore((s) => s.loadProject);
   const newProject = useProjectStore((s) => s.newProject);
   const markSaved = useProjectStore((s) => s.markSaved);
   const setDirty = useProjectStore((s) => s.setDirty);
@@ -98,36 +93,12 @@ export function MenuBar(): JSX.Element {
 
   const handleOpenPdf = (): Promise<void> =>
     wrap(async () => {
-      const path = await selectPdfFile();
-      if (!path) return;
-      const buffer = await readBinaryFile(path);
-      const rendered = await renderPdfPage(buffer, 1, 2.0, 0);
-      loadPdf(
-        basename(path),
-        {
-          selectedPage: 1,
-          widthMm: ptToMm(rendered.widthPt),
-          heightMm: ptToMm(rendered.heightPt),
-        },
-        rendered.canvas,
-        buffer,
-      );
+      await openPdfIntoStore();
     });
 
   const handleOpenProject = (): Promise<void> =>
     wrap(async () => {
-      if (dirty) {
-        const ok = await askConfirm(
-          '未保存の変更があります。別ファイルを開くと失われます。続行しますか?',
-          'プロジェクトを開く',
-        );
-        if (!ok) return;
-      }
-      const path = await selectProjectFileToOpen();
-      if (!path) return;
-      const json = await readProjectFile(path);
-      const loaded = deserializeProject(json);
-      loadProject(path, loaded);
+      await openProjectIntoStore(dirty);
     });
 
   const handleSave = (): Promise<void> =>
