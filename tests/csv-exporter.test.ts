@@ -144,6 +144,30 @@ describe('formatSymbolSpec', () => {
     ).toBe('直列');
   });
 
+  // Phase 2-I: 画像シンボル (product-image) の規格 = メーカー + 品番
+  it('product-image: メーカー + 品番 を返す', () => {
+    expect(
+      formatSymbolSpec(
+        makeSymbol('s', 'product-image', 'L', { maker: 'Panasonic', partNumber: 'LGB12345' }),
+      ),
+    ).toBe('Panasonic LGB12345');
+  });
+
+  it('product-image: 品番のみ / メーカーのみでも結合', () => {
+    expect(
+      formatSymbolSpec(makeSymbol('s', 'product-image', 'L', { partNumber: 'LGB99' })),
+    ).toBe('LGB99');
+    expect(
+      formatSymbolSpec(makeSymbol('s', 'product-image', 'L', { maker: 'Panasonic' })),
+    ).toBe('Panasonic');
+  });
+
+  it('product-image: メーカー/品番なしなら spec にフォールバック', () => {
+    expect(
+      formatSymbolSpec(makeSymbol('s', 'product-image', 'L', { spec: 'LED 7W' })),
+    ).toBe('LED 7W');
+  });
+
   it('整数でない数値は小数 1 桁に整形', () => {
     expect(
       formatSymbolSpec(makeSymbol('s', 'downlight', 'L', { wattage: 7.5 })),

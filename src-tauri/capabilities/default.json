@@ -17,6 +17,16 @@
     "fs:allow-write-text-file",
     "updater:default",
     "process:allow-restart",
-    "process:default"
+    "process:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://*.panasonic.biz/*" },
+        { "url": "https://*.panasonic.com/*" },
+        { "url": "https://panasonic.jp/*" },
+        { "url": "https://panasonic.icata.net/*" },
+        { "url": "https://www.google.com/search*" }
+      ]
+    }
   ]
 }

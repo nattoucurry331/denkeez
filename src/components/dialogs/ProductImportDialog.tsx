@@ -14,6 +14,22 @@ import {
   formatBytes,
   type ImportedImage,
 } from '../../utils/image-import';
+import { openExternalUrl } from '../../tauri/api';
+
+/**
+ * メーカーと品番から公式検索ページの URL を組み立てる。
+ * Panasonic は品番検索ページ、それ以外は Google で "メーカー 品番" 検索にフォールバック。
+ * (正規 API は無いため、ユーザーが公式ページで画像を入手する導線を提供するのみ)
+ */
+function officialSearchUrl(maker: string, partNumber: string): string {
+  const q = partNumber.trim();
+  if (maker.includes('Panasonic') || maker.toLowerCase().includes('panasonic')) {
+    // Panasonic 品番情報検索 (品番をクエリに付与。正確なパラメータは将来見直し)
+    return `https://www2.panasonic.biz/jp/products/category/search.html?q=${encodeURIComponent(q)}`;
+  }
+  // その他メーカー: Web 検索にフォールバック
+  return `https://www.google.com/search?q=${encodeURIComponent(`${maker} ${q}`)}`;
+}
 
 /** 配置時のデフォルト表示幅 (紙面 mm)。JIS 記号 (φ5mm 円) より少し大きめ */
 export const PRODUCT_IMAGE_DEFAULT_WIDTH_MM = 12;
@@ -153,14 +169,25 @@ export function ProductImportDialog({
 
             <div style={fieldStyle}>
               <label htmlFor="pi-part" style={labelStyle}>品番</label>
-              <input
-                id="pi-part"
-                type="text"
-                value={partNumber}
-                onChange={(e) => setPartNumber(e.target.value)}
-                placeholder="例: LGB12345"
-                style={inputStyle}
-              />
+              <div style={partRowStyle}>
+                <input
+                  id="pi-part"
+                  type="text"
+                  value={partNumber}
+                  onChange={(e) => setPartNumber(e.target.value)}
+                  placeholder="例: LGB12345"
+                  style={{ ...inputStyle, flex: 1 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void openExternalUrl(officialSearchUrl(maker, partNumber))}
+                  disabled={partNumber.trim() === ''}
+                  style={officialBtnStyle}
+                  title="公式サイトの品番ページをブラウザで開く (画像はそこから保存して取り込んでください)"
+                >
+                  🔍 公式ページを開く
+                </button>
+              </div>
             </div>
 
             <div style={fieldStyle}>
@@ -307,6 +334,18 @@ const fieldStyle: React.CSSProperties = {
   marginBottom: 10,
 };
 const labelStyle: React.CSSProperties = { fontSize: '0.78rem', color: '#444', fontWeight: 'bold' };
+const partRowStyle: React.CSSProperties = { display: 'flex', gap: 6, alignItems: 'stretch' };
+const officialBtnStyle: React.CSSProperties = {
+  flexShrink: 0,
+  padding: '4px 10px',
+  fontSize: '0.78rem',
+  background: '#eef6ff',
+  border: '1px solid #0080ff',
+  borderRadius: 3,
+  color: '#0066cc',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
 const inputStyle: React.CSSProperties = {
   fontSize: '0.85rem',
   padding: '5px 7px',
