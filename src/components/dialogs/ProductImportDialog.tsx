@@ -7,7 +7,7 @@
 //
 // 公式ページへの deep-link ボタンは Phase 2-I3 (opener plugin) で追加する。
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   importImageFile,
   importImageFromClipboard,
@@ -38,6 +38,16 @@ function officialSearchUrl(maker: string, partNumber: string): string {
 /** 配置時のデフォルト表示幅 (紙面 mm)。JIS 記号 (φ5mm 円) より少し大きめ */
 export const PRODUCT_IMAGE_DEFAULT_WIDTH_MM = 12;
 
+/**
+ * A: 取込手順ガイド。職人さんが「公式ページを開いた後どうするか」で迷わないよう、
+ * ブラウザで画像をコピー → アプリで Ctrl+V という最短ルートを明示する。
+ */
+const IMPORT_STEPS: readonly string[] = [
+  '「🔍 公式ページを開く」で商品を探す',
+  '商品画像を右クリック →「画像をコピー」',
+  'この画面で Ctrl+V を押して貼り付け',
+];
+
 export interface ProductImportResult {
   maker: string;
   partNumber: string;
@@ -48,8 +58,12 @@ export interface ProductImportResult {
 
 interface Props {
   readonly open: boolean;
+  /** 配置のみ (プリセット保存しない) */
   readonly onPlace: (result: ProductImportResult) => void;
+  /** 保存のみ (プリセットに登録、配置はしない) */
   readonly onSavePreset: (result: ProductImportResult) => void;
+  /** 保存して配置 (主アクション)。プリセット登録 + そのまま配置モードへ */
+  readonly onSaveAndPlace: (result: ProductImportResult) => void;
   readonly onCancel: () => void;
 }
 
@@ -59,6 +73,7 @@ export function ProductImportDialog({
   open,
   onPlace,
   onSavePreset,
+  onSaveAndPlace,
   onCancel,
 }: Props): JSX.Element | null {
   const [maker, setMaker] = useState('Panasonic');
@@ -112,8 +127,6 @@ export function ProductImportDialog({
     return () => window.removeEventListener('paste', onPaste);
   }, [open]);
 
-  if (!open) return null;
-
   const effectiveName =
     displayName.trim() || [maker, partNumber].filter((s) => s.trim()).join(' ').trim();
   const canSubmit = image !== null && effectiveName !== '';
@@ -137,6 +150,32 @@ export function ProductImportDialog({
     const r = buildResult();
     if (r) onSavePreset(r);
   };
+  const handleSaveAndPlace = (): void => {
+    const r = buildResult();
+    if (r) onSaveAndPlace(r);
+  };
+
+  // D: キーボード操作 (Windows 標準)。Esc=キャンセル / Ctrl+Enter=保存して配置。
+  // 素の Enter は入力欄での誤発火を避けるため扱わない。
+  // 最新の canSubmit / ハンドラを ref 経由で読み、open のたびにのみ購読し直す。
+  const hotkeyRef = useRef({ onCancel, handleSaveAndPlace, canSubmit });
+  hotkeyRef.current = { onCancel, handleSaveAndPlace, canSubmit };
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        hotkeyRef.current.onCancel();
+      } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        if (hotkeyRef.current.canSubmit) hotkeyRef.current.handleSaveAndPlace();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  if (!open) return null;
 
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="product-import-title" style={overlayStyle}>
@@ -144,6 +183,16 @@ export function ProductImportDialog({
         <h2 id="product-import-title" style={headingStyle}>
           メーカー商品を取り込む
         </h2>
+
+        {/* A: 取込手順ガイド */}
+        <ol style={stepGuideStyle}>
+          {IMPORT_STEPS.map((step, i) => (
+            <li key={i} style={stepItemStyle}>
+              <span style={stepNumStyle}>{i + 1}</span>
+              <span>{step}</span>
+            </li>
+          ))}
+        </ol>
 
         <div style={twoColStyle}>
           {/* 左: 入力フォーム */}
@@ -249,13 +298,14 @@ export function ProductImportDialog({
                 <img src={image.dataUrl} alt="プレビュー" style={previewImgStyle} />
               ) : (
                 <div style={dropHintStyle}>
-                  <p>ここに画像をドロップ</p>
-                  <p style={dropHintSmallStyle}>または Ctrl+V で貼り付け</p>
+                  <p style={dropHintIconStyle}>📋</p>
+                  <p style={dropHintMainStyle}>Ctrl+V で貼り付け</p>
+                  <p style={dropHintSmallStyle}>ドラッグ&amp;ドロップでも取り込めます</p>
                 </div>
               )}
             </div>
-            <label style={fileButtonStyle}>
-              ファイルを選択
+            <label style={fileLinkStyle}>
+              または画像ファイルを選ぶ
               <input
                 type="file"
                 accept="image/*"
@@ -283,28 +333,40 @@ export function ProductImportDialog({
         </p>
 
         <div style={buttonsStyle}>
+          <button type="button" onClick={onCancel} style={cancelBtnStyle}>
+            キャンセル
+          </button>
+          <span style={spacerStyle} />
           <button
             type="button"
             onClick={handleSavePreset}
             disabled={!canSubmit}
             style={secondaryBtnStyle}
-            title="パレットに登録して何度も使えるようにする"
+            title="パレットに登録だけする (今は配置しない)"
           >
-            プリセットに保存
+            保存のみ
           </button>
           <button
             type="button"
             onClick={handlePlace}
             disabled={!canSubmit}
+            style={secondaryBtnStyle}
+            title="パレットに登録せず、今回だけ図面に配置する"
+          >
+            配置のみ
+          </button>
+          <button
+            type="button"
+            onClick={handleSaveAndPlace}
+            disabled={!canSubmit}
             style={primaryBtnStyle}
             autoFocus
+            title="パレットに登録して、そのまま図面に配置する (Ctrl+Enter)"
           >
-            この場に配置
-          </button>
-          <button type="button" onClick={onCancel} style={cancelBtnStyle}>
-            キャンセル
+            保存して配置
           </button>
         </div>
+        <p style={hotkeyHintStyle}>Esc で閉じる / Ctrl+Enter で「保存して配置」</p>
       </div>
     </div>
   );
@@ -329,7 +391,38 @@ const modalStyle: React.CSSProperties = {
   overflowY: 'auto',
   boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
 };
-const headingStyle: React.CSSProperties = { marginTop: 0, marginBottom: 16, fontSize: '1rem' };
+const headingStyle: React.CSSProperties = { marginTop: 0, marginBottom: 12, fontSize: '1rem' };
+const stepGuideStyle: React.CSSProperties = {
+  listStyle: 'none',
+  display: 'flex',
+  gap: 8,
+  flexWrap: 'wrap',
+  margin: '0 0 16px',
+  padding: '10px 12px',
+  background: '#f3f8ff',
+  border: '1px solid #cfe3ff',
+  borderRadius: 6,
+  fontSize: '0.78rem',
+  color: '#33475b',
+};
+const stepItemStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+};
+const stepNumStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 18,
+  height: 18,
+  borderRadius: '50%',
+  background: '#0080ff',
+  color: '#fff',
+  fontSize: '0.7rem',
+  fontWeight: 'bold',
+  flexShrink: 0,
+};
 const twoColStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: '1fr 220px',
@@ -379,8 +472,15 @@ const dropZoneActiveStyle: React.CSSProperties = {
 };
 const dropHintStyle: React.CSSProperties = {
   textAlign: 'center',
-  color: '#999',
+  color: '#888',
   fontSize: '0.85rem',
+};
+const dropHintIconStyle: React.CSSProperties = { fontSize: '1.6rem', margin: 0 };
+const dropHintMainStyle: React.CSSProperties = {
+  fontSize: '0.92rem',
+  fontWeight: 'bold',
+  color: '#0066cc',
+  margin: '6px 0 0',
 };
 const dropHintSmallStyle: React.CSSProperties = { fontSize: '0.72rem', marginTop: 4 };
 const previewImgStyle: React.CSSProperties = {
@@ -388,14 +488,12 @@ const previewImgStyle: React.CSSProperties = {
   maxHeight: '100%',
   objectFit: 'contain',
 };
-const fileButtonStyle: React.CSSProperties = {
+const fileLinkStyle: React.CSSProperties = {
   display: 'inline-block',
   textAlign: 'center',
-  padding: '6px 12px',
-  background: '#f0f0f0',
-  border: '1px solid #ccc',
-  borderRadius: 4,
-  fontSize: '0.82rem',
+  fontSize: '0.78rem',
+  color: '#0066cc',
+  textDecoration: 'underline',
   cursor: 'pointer',
 };
 const sizeHintStyle: React.CSSProperties = { fontSize: '0.72rem', color: '#888' };
@@ -429,7 +527,13 @@ const secondaryBtnStyle: React.CSSProperties = {
   padding: '6px 14px',
   borderRadius: 4,
   cursor: 'pointer',
-  marginRight: 'auto',
+};
+const spacerStyle: React.CSSProperties = { flex: 1 };
+const hotkeyHintStyle: React.CSSProperties = {
+  fontSize: '0.7rem',
+  color: '#999',
+  textAlign: 'right',
+  margin: '6px 0 0',
 };
 const cancelBtnStyle: React.CSSProperties = {
   background: 'transparent',

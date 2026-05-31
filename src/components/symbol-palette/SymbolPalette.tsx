@@ -57,11 +57,10 @@ export function SymbolPalette(): JSX.Element {
     enterPlaceMode(preset.baseType, presetInfo);
   };
 
-  // Phase 2-I2: 取込結果 → product-image 配置モードへ
-  const productResultToPresetInfo = (
-    r: ProductImportResult,
-  ): import('../../data/project-store').PlacePresetInfo => ({
-    presetId: `product:${r.partNumber || r.displayName}`,
+  // Phase 2-I2 / 2-K1: 取込結果 → プリセット入力・配置情報の組み立て (DRY)
+  const productPresetInput = (r: ProductImportResult): Omit<SymbolPreset, 'id'> => ({
+    baseType: 'product-image',
+    displayName: r.displayName,
     defaultProperties: {
       maker: r.maker,
       partNumber: r.partNumber,
@@ -70,22 +69,63 @@ export function SymbolPalette(): JSX.Element {
     image: { dataUrl: r.image.dataUrl, aspectRatio: r.image.aspectRatio },
   });
 
+  const placeInfoFor = (
+    r: ProductImportResult,
+    presetId: string,
+  ): import('../../data/project-store').PlacePresetInfo => ({
+    presetId,
+    defaultProperties: {
+      maker: r.maker,
+      partNumber: r.partNumber,
+      ...(r.spec ? { spec: r.spec } : {}),
+    },
+    image: { dataUrl: r.image.dataUrl, aspectRatio: r.image.aspectRatio },
+  });
+
+  // 同一メーカー+品番の商品プリセットを探す (品番が空なら重複判定しない)。
+  // 2-K1 では暗黙に上書きし、明示の確認バナーは 2-K3 (G) で追加する。
+  const findProductPresetId = (r: ProductImportResult): string | null => {
+    const part = r.partNumber.trim();
+    if (part === '') return null;
+    const maker = r.maker.trim();
+    const hit = presets.find(
+      (p) =>
+        p.baseType === 'product-image' &&
+        typeof p.defaultProperties.maker === 'string' &&
+        p.defaultProperties.maker.trim() === maker &&
+        typeof p.defaultProperties.partNumber === 'string' &&
+        p.defaultProperties.partNumber.trim() === part,
+    );
+    return hit ? hit.id : null;
+  };
+
+  // 保存 (新規 or 上書き) して、確定したプリセット id を返す。
+  const upsertProductPreset = (r: ProductImportResult): string => {
+    const dupId = findProductPresetId(r);
+    const input = productPresetInput(r);
+    if (dupId) {
+      updatePreset(dupId, input);
+      return dupId;
+    }
+    return addPreset(input);
+  };
+
+  // 配置のみ (プリセット保存しない。今回限りの配置)
   const handleProductPlace = (r: ProductImportResult): void => {
-    enterPlaceMode('product-image', productResultToPresetInfo(r));
+    enterPlaceMode('product-image', placeInfoFor(r, `product:${r.partNumber || r.displayName}`));
     setProductImportOpen(false);
   };
 
+  // 保存のみ
   const handleProductSavePreset = (r: ProductImportResult): void => {
-    addPreset({
-      baseType: 'product-image',
-      displayName: r.displayName,
-      defaultProperties: {
-        maker: r.maker,
-        partNumber: r.partNumber,
-        ...(r.spec ? { spec: r.spec } : {}),
-      },
-      image: { dataUrl: r.image.dataUrl, aspectRatio: r.image.aspectRatio },
-    });
+    upsertProductPreset(r);
+    setProductImportOpen(false);
+  };
+
+  // 保存して配置 (主アクション): 保存した実プリセット id で配置モードに入る
+  const handleProductSaveAndPlace = (r: ProductImportResult): void => {
+    const id = upsertProductPreset(r);
+    enterPlaceMode('product-image', placeInfoFor(r, id));
     setProductImportOpen(false);
   };
 
@@ -254,6 +294,7 @@ export function SymbolPalette(): JSX.Element {
         open={productImportOpen}
         onPlace={handleProductPlace}
         onSavePreset={handleProductSavePreset}
+        onSaveAndPlace={handleProductSaveAndPlace}
         onCancel={() => setProductImportOpen(false)}
       />
     </aside>
