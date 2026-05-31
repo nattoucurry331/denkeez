@@ -9,6 +9,28 @@ import type { SymbolPreset, SymbolType, PropertyValue } from './types';
 
 const STORAGE_KEY = 'denkeez.presets';
 
+/**
+ * Phase 2-K3 (G): 商品プリセットの同一性キー。メーカー+品番を正規化して返す。
+ * 品番が空なら null (= 重複判定しない。空商品同士の誤一致を避ける)。
+ * 正規化: 前後空白除去 + 小文字化 + 連続空白(全角含む)を 1 つに圧縮。
+ */
+export function productPresetKey(maker: string, partNumber: string): string | null {
+  // \s は全角空白 (U+3000) も含むため、連続空白を半角 1 つに圧縮できる。
+  const norm = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, ' ');
+  const part = norm(partNumber);
+  if (part === '') return null;
+  return `${norm(maker)} ${part}`;
+}
+
+/** 商品プリセットから maker+品番のキーを取り出す (product-image 以外や品番無しは null)。 */
+function presetProductKey(p: SymbolPreset): string | null {
+  if (p.baseType !== 'product-image') return null;
+  const maker = p.defaultProperties.maker;
+  const part = p.defaultProperties.partNumber;
+  if (typeof maker !== 'string' || typeof part !== 'string') return null;
+  return productPresetKey(maker, part);
+}
+
 function readInitial(): SymbolPreset[] {
   try {
     const v = window.localStorage.getItem(STORAGE_KEY);
@@ -78,6 +100,8 @@ interface PresetState {
   removePreset: (id: string) => void;
   /** id から取得 (存在しなければ undefined) */
   getPreset: (id: string) => SymbolPreset | undefined;
+  /** Phase 2-K3: 同一メーカー+品番の商品プリセットを探す (品番空なら undefined) */
+  findProductPresetByKey: (maker: string, partNumber: string) => SymbolPreset | undefined;
 }
 
 export const usePresetStore = create<PresetState>((set, get) => ({
@@ -141,4 +165,10 @@ export const usePresetStore = create<PresetState>((set, get) => ({
   },
 
   getPreset: (id) => get().presets.find((p) => p.id === id),
+
+  findProductPresetByKey: (maker, partNumber) => {
+    const key = productPresetKey(maker, partNumber);
+    if (key === null) return undefined;
+    return get().presets.find((p) => presetProductKey(p) === key);
+  },
 }));

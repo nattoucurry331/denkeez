@@ -75,14 +75,22 @@ interface Props {
   readonly open: boolean;
   /** 配置のみ (プリセット保存しない) */
   readonly onPlace: (result: ProductImportResult) => void;
-  /** 保存のみ (プリセットに登録、配置はしない) */
-  readonly onSavePreset: (result: ProductImportResult) => void;
+  /** 保存のみ (プリセットに登録、配置はしない)。mode='overwrite' なら既存を上書き。 */
+  readonly onSavePreset: (result: ProductImportResult, mode: SaveMode) => void;
   /** 保存して配置 (主アクション)。プリセット登録 + そのまま配置モードへ */
-  readonly onSaveAndPlace: (result: ProductImportResult) => void;
+  readonly onSaveAndPlace: (result: ProductImportResult, mode: SaveMode) => void;
   readonly onCancel: () => void;
   /** Phase 2-K2: 図面の縮尺が校正済みか (プレビューの補足バッジ用)。 */
   readonly scaleConfigured?: boolean;
+  /** Phase 2-K3: 同一メーカー+品番のプリセットを探す (重複警告用)。 */
+  readonly findDuplicate?: (maker: string, partNumber: string) => { displayName: string } | null;
 }
+
+/** Phase 2-K3: プリセット保存の種別。新規 or 既存上書き。 */
+export type SaveMode = 'new' | 'overwrite';
+
+/** どの保存アクションから重複確認が出たか。 */
+type SaveIntent = 'save' | 'saveAndPlace';
 
 const MAKER_OPTIONS = ['Panasonic', '大光電機 (DAIKO)', 'コイズミ', '遠藤照明', 'オーデリック', 'その他'];
 
@@ -93,6 +101,7 @@ export function ProductImportDialog({
   onSaveAndPlace,
   onCancel,
   scaleConfigured = false,
+  findDuplicate,
 }: Props): JSX.Element | null {
   const [maker, setMaker] = useState('Panasonic');
   const [partNumber, setPartNumber] = useState('');
@@ -103,6 +112,11 @@ export function ProductImportDialog({
   const [dragOver, setDragOver] = useState(false);
   // E: 図面上の表示幅 (紙面 mm)
   const [widthMm, setWidthMm] = useState(PRODUCT_IMAGE_DEFAULT_WIDTH_MM);
+  // G: 重複確認の保留状態 (既存プリセットと同一メーカー+品番のとき)
+  const [pendingSave, setPendingSave] = useState<{
+    displayName: string;
+    intent: SaveIntent;
+  } | null>(null);
 
   // プレビューは canvas/zoom 非依存。描画設定の倍率だけ反映して、実際の図面での
   // 相対的な大小を正しく見せる (globalSizeScale × typeScales['product-image'])。
@@ -121,6 +135,7 @@ export function ProductImportDialog({
       setError(null);
       setDragOver(false);
       setWidthMm(PRODUCT_IMAGE_DEFAULT_WIDTH_MM);
+      setPendingSave(null);
     }
   }, [open]);
 
@@ -183,14 +198,27 @@ export function ProductImportDialog({
     const r = buildResult();
     if (r) onPlace(r);
   };
-  const handleSavePreset = (): void => {
+
+  // G: 保存系は、同一メーカー+品番が既にあれば確認バナーを出してから確定する。
+  const commitSave = (intent: SaveIntent, mode: SaveMode): void => {
     const r = buildResult();
-    if (r) onSavePreset(r);
+    if (!r) return;
+    setPendingSave(null);
+    if (intent === 'save') onSavePreset(r, mode);
+    else onSaveAndPlace(r, mode);
   };
-  const handleSaveAndPlace = (): void => {
+  const requestSave = (intent: SaveIntent): void => {
     const r = buildResult();
-    if (r) onSaveAndPlace(r);
+    if (!r) return;
+    const dup = findDuplicate?.(r.maker, r.partNumber) ?? null;
+    if (dup) {
+      setPendingSave({ displayName: dup.displayName, intent });
+    } else {
+      commitSave(intent, 'new');
+    }
   };
+  const handleSavePreset = (): void => requestSave('save');
+  const handleSaveAndPlace = (): void => requestSave('saveAndPlace');
 
   // D: キーボード操作 (Windows 標準)。Esc=キャンセル / Ctrl+Enter=保存して配置。
   // 素の Enter は入力欄での誤発火を避けるため扱わない。
@@ -432,6 +460,41 @@ export function ProductImportDialog({
           ⚠️ 取り込む画像は、入手元 (メーカー公式サイト等) の利用規約に従ってご利用ください。
           自動取得は行わず、ご自身で保存した画像のみを取り込みます。
         </p>
+
+        {/* G: 重複確認バナー */}
+        {pendingSave && (
+          <div role="alertdialog" aria-label="重複確認" style={dupBannerStyle}>
+            <p style={dupBannerTextStyle}>
+              同じ品番のプリセット「{pendingSave.displayName}」が既に登録されています。
+              どうしますか?
+            </p>
+            <div style={dupBannerBtnsStyle}>
+              <button
+                type="button"
+                onClick={() => commitSave(pendingSave.intent, 'overwrite')}
+                style={primaryBtnStyle}
+                title="既存のプリセットを今回の内容で更新する"
+              >
+                上書き保存
+              </button>
+              <button
+                type="button"
+                onClick={() => commitSave(pendingSave.intent, 'new')}
+                style={secondaryBtnStyle}
+                title="別のプリセットとして新しく登録する"
+              >
+                別に登録
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingSave(null)}
+                style={cancelBtnStyle}
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        )}
 
         <div style={buttonsStyle}>
           <button type="button" onClick={onCancel} style={cancelBtnStyle}>
@@ -683,6 +746,23 @@ const noticeStyle: React.CSSProperties = {
   borderLeft: '3px solid #f0a000',
   padding: '8px 12px',
   margin: '12px 0',
+};
+const dupBannerStyle: React.CSSProperties = {
+  background: '#fff4f4',
+  border: '1px solid #f0b0b0',
+  borderRadius: 6,
+  padding: '10px 12px',
+  margin: '0 0 12px',
+};
+const dupBannerTextStyle: React.CSSProperties = {
+  fontSize: '0.8rem',
+  color: '#a33',
+  margin: '0 0 8px',
+};
+const dupBannerBtnsStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  justifyContent: 'flex-end',
 };
 const buttonsStyle: React.CSSProperties = {
   display: 'flex',
