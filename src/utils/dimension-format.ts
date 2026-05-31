@@ -20,3 +20,15 @@ export function formatDistanceMm(mm: number, calibrated: boolean): string {
   }
   return `${groupedMm(safe)} mm / ${(safe / 1000).toFixed(2)} m`;
 }
+
+/**
+ * PDF 出力用の ASCII 専用ラベル。jsPDF の既定フォントは日本語を描画できないため、
+ * 「(紙面)」の代わりに "(paper)" を使う (Q-D 日本語フォント未対応の回避)。
+ */
+export function formatDistanceMmAscii(mm: number, calibrated: boolean): string {
+  const safe = Number.isFinite(mm) && mm > 0 ? mm : 0;
+  if (!calibrated) {
+    return `${groupedMm(safe)} mm (paper)`;
+  }
+  return `${groupedMm(safe)} mm / ${(safe / 1000).toFixed(2)} m`;
+}
