@@ -18,6 +18,7 @@
 
 import jsPDF from 'jspdf';
 import type {
+  Dimension,
   Layer,
   Project,
   ProjectSymbol,
@@ -31,6 +32,7 @@ import { getSymbolDefinition, type SymbolShape } from '../symbols/symbol-registr
 import { getWirePoints } from '../utils/wire-geometry';
 import { getLayerColor } from '../data/layer-helpers';
 import { computeEffectiveSymbolScale } from '../data/render-settings-store';
+import { formatDistanceMmAscii } from '../utils/dimension-format';
 
 const MM_PER_INCH = 25.4;
 const PT_PER_INCH = 72;
@@ -174,8 +176,47 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
     );
   }
 
+  // Phase 3 F-16 Sub-4: 寸法注記をシンボルの上に描画 (レイヤーフィルタ適用)
+  drawDimensions(pdf, project.dimensions ?? [], allowedLayers, project.layers, !!drawing.scale, tx, ty);
+
   const buffer = pdf.output('arraybuffer');
   return new Uint8Array(buffer);
+}
+
+/**
+ * Phase 3 F-16 Sub-4: 寸法注記を PDF に描画する。
+ * 端点は実寸 mm 系 (tx/ty で PDF mm 化)。距離は端点間ユークリッド距離から再計算。
+ * ラベルは jsPDF 既定フォント (日本語不可) のため ASCII 専用関数を使う。
+ */
+function drawDimensions(
+  pdf: jsPDF,
+  dimensions: readonly Dimension[],
+  allowedLayers: ReadonlySet<string>,
+  layers: readonly Layer[],
+  calibrated: boolean,
+  tx: (mm: number) => number,
+  ty: (mm: number) => number,
+): void {
+  for (const d of dimensions) {
+    if (!allowedLayers.has(d.layerId)) continue;
+    const color = getLayerColor(d.layerId, layers);
+    const x1 = tx(d.from.x);
+    const y1 = ty(d.from.y);
+    const x2 = tx(d.to.x);
+    const y2 = ty(d.to.y);
+    pdf.setDrawColor(color);
+    pdf.setFillColor(color);
+    pdf.setTextColor(color);
+    pdf.setLineWidth(0.2);
+    pdf.line(x1, y1, x2, y2);
+    pdf.circle(x1, y1, 0.6, 'F');
+    pdf.circle(x2, y2, 0.6, 'F');
+    const distMm = Math.hypot(d.to.x - d.from.x, d.to.y - d.from.y);
+    pdf.setFontSize(8);
+    pdf.text(formatDistanceMmAscii(distMm, calibrated), (x1 + x2) / 2, (y1 + y2) / 2 - 1, {
+      align: 'center',
+    });
+  }
 }
 
 /**
