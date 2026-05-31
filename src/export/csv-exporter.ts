@@ -13,6 +13,7 @@
 import type { Layer, ProjectSymbol, Wire } from '../data/types';
 import type { BomFilter } from '../data/bom-aggregator';
 import { buildBomLineItems, type BomLineItem } from './bom-export-model';
+import { formatCircuitRange } from '../utils/circuit-range';
 
 const HEADER = ['種別', '規格', '数量', '単位', '回路番号', '備考'] as const;
 const BOM = '﻿';
@@ -50,7 +51,8 @@ function toCsvRow(item: BomLineItem): CsvRow {
     spec: item.spec,
     quantity,
     unit: item.unit,
-    circuit: item.circuits.join(', '),
+    // 連番が 3 つ以上なら "L-1〜L-3" に圧縮 (2 連続以下はそのまま列挙)
+    circuit: formatCircuitRange(item.circuits),
     note: '',
   };
 }
