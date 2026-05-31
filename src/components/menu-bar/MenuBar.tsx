@@ -26,6 +26,7 @@ import {
   type PdfExportSettings,
 } from '../dialogs/PdfExportDialog';
 import { AboutDialog } from '../dialogs/AboutDialog';
+import { TitleBlockDialog } from '../dialogs/TitleBlockDialog';
 import { useUpdaterStore } from '../../data/updater-store';
 import { useRenderSettingsStore } from '../../data/render-settings-store';
 
@@ -45,6 +46,7 @@ export function MenuBar(): JSX.Element {
   const enterScaleMode = useProjectStore((s) => s.enterScaleMode);
   const enterMeasureMode = useProjectStore((s) => s.enterMeasureMode);
   const enterDimensionMode = useProjectStore((s) => s.enterDimensionMode);
+  const setTitleBlock = useProjectStore((s) => s.setTitleBlock);
   const exitMode = useProjectStore((s) => s.exitMode);
   const setScale = useProjectStore((s) => s.setScale);
   const enterWireMode = useProjectStore((s) => s.enterWireMode);
@@ -70,6 +72,7 @@ export function MenuBar(): JSX.Element {
 
   // Phase 2-G2: About / 免責ダイアログ
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [titleBlockOpen, setTitleBlockOpen] = useState(false);
 
   const wrap = async (fn: () => Promise<void>): Promise<void> => {
     setError(null);
@@ -265,6 +268,15 @@ export function MenuBar(): JSX.Element {
       >
         見積用 JSON 出力
       </button>
+      <button
+        onClick={() => setTitleBlockOpen(true)}
+        disabled={busy || !pdfCanvas}
+        type="button"
+        title="図面の隅に表題欄(工事名・図面名・縮尺・日付・作成者・会社名)を付ける"
+        style={project.titleBlock?.enabled ? activeButtonStyle : undefined}
+      >
+        表題欄{project.titleBlock?.enabled ? ' ✓' : ''}…
+      </button>
       <span style={separatorStyle}>|</span>
       <button
         onClick={() => (mode.kind === 'scale' ? exitMode() : enterScaleMode())}
@@ -398,6 +410,23 @@ export function MenuBar(): JSX.Element {
         />
       )}
       <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <TitleBlockDialog
+        open={titleBlockOpen}
+        current={project.titleBlock}
+        defaultProjectName={project.meta.name}
+        today={new Date().toISOString().slice(0, 10)}
+        onSave={(config) => {
+          setTitleBlock(config);
+          setTitleBlockOpen(false);
+          setInfo('表題欄を設定しました (PDF 出力に反映されます)');
+        }}
+        onClear={() => {
+          setTitleBlock(undefined);
+          setTitleBlockOpen(false);
+          setInfo('表題欄を外しました');
+        }}
+        onCancel={() => setTitleBlockOpen(false)}
+      />
     </header>
   );
 }

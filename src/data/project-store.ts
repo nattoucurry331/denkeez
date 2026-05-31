@@ -19,6 +19,7 @@ import type {
   ProjectDrawingScale,
   ProjectSymbol,
   PropertyValue,
+  TitleBlockConfig,
   Wire,
 } from './types';
 import { DEFAULT_GRID_CONFIG } from './types';
@@ -144,6 +145,8 @@ export interface ProjectActions {
     to: { x: number; y: number },
   ) => void;
   removeDimensions: (ids: readonly string[]) => void;
+  // Phase 3 F-14: 表題欄
+  setTitleBlock: (config: TitleBlockConfig | undefined) => void;
   // Phase 2-C2: 配線
   enterWireMode: () => void;
   setWireFromSymbol: (symbolId: string) => void;
@@ -583,6 +586,18 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       dirty: true,
       selectedIds: get().selectedIds.filter((sid) => !idSet.has(sid)),
     });
+  },
+
+  // Phase 3 F-14: 表題欄設定 (undefined で表題欄なし)
+  setTitleBlock: (config) => {
+    const current = get().project;
+    const nextProject: Project = { ...current, meta: { ...current.meta, updatedAt: nowIso() } };
+    if (config === undefined) {
+      delete nextProject.titleBlock;
+    } else {
+      nextProject.titleBlock = config;
+    }
+    set({ project: nextProject, dirty: true });
   },
 
   setScale: (scale) => {

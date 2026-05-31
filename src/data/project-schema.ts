@@ -102,6 +102,17 @@ const DimensionSchema = z.object({
   layerId: z.string().min(1).optional(),
 });
 
+// Phase 3 F-14: 表題欄設定
+const TitleBlockSchema = z.object({
+  enabled: z.boolean(),
+  position: z.enum(['bottom-right', 'top-right', 'bottom-left', 'top-left']),
+  projectName: z.string(),
+  drawingName: z.string(),
+  date: z.string(),
+  author: z.string(),
+  company: z.string(),
+});
+
 // Phase 2-D1: レイヤー (REQUIREMENTS §5.2 / F-08)
 const LayerKindSchema = z.enum(['background', 'user']);
 const LayerSchema = z.object({
@@ -124,6 +135,8 @@ export const ProjectSchema = z.object({
   grid: ProjectGridConfigSchema.optional(),
   // Phase 3 F-16 Sub-3
   dimensions: z.array(DimensionSchema).optional(),
+  // Phase 3 F-14
+  titleBlock: TitleBlockSchema.optional(),
 });
 
 export type ProjectSchemaInput = z.input<typeof ProjectSchema>;
