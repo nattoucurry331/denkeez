@@ -44,6 +44,7 @@ export function MenuBar(): JSX.Element {
   const removeSymbols = useProjectStore((s) => s.removeSymbols);
   const enterScaleMode = useProjectStore((s) => s.enterScaleMode);
   const enterMeasureMode = useProjectStore((s) => s.enterMeasureMode);
+  const enterDimensionMode = useProjectStore((s) => s.enterDimensionMode);
   const exitMode = useProjectStore((s) => s.exitMode);
   const setScale = useProjectStore((s) => s.setScale);
   const enterWireMode = useProjectStore((s) => s.enterWireMode);
@@ -282,6 +283,15 @@ export function MenuBar(): JSX.Element {
         title="寸法を測る: 図面上の 2 点をクリックすると距離を表示 (校正済みなら実寸)"
       >
         {mode.kind === 'measure' ? '✓ 寸法計測中 (ESC で解除)' : '寸法を測る'}
+      </button>
+      <button
+        onClick={() => (mode.kind === 'dimension' ? exitMode() : enterDimensionMode())}
+        disabled={busy || !pdfCanvas}
+        type="button"
+        style={mode.kind === 'dimension' ? activeButtonStyle : undefined}
+        title="寸法線を引く: 2 点をクリックすると図面に寸法線が残る (選択して移動・Delete で削除)"
+      >
+        {mode.kind === 'dimension' ? '✓ 寸法線モード (ESC で解除)' : '寸法線を引く'}
       </button>
       <button
         onClick={() => (mode.kind === 'wire' ? exitMode() : enterWireMode())}

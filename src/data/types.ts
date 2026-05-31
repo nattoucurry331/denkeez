@@ -235,6 +235,23 @@ export interface Wire {
   layerId: string;
 }
 
+/**
+ * Phase 3 F-16 Sub-3: 図面に残す寸法注記(2 点間の寸法線)。
+ * 端点は symbols.position と同じ mm 座標系で保持する。表示距離は読込時に
+ * 端点間ユークリッド距離から再計算するため、後からスケール校正しても整合する。
+ * JIS 記号(単点)とは別物なので拾い出し(BOM)には混入させない専用エンティティ。
+ */
+export interface Dimension {
+  /** UUID */
+  id: string;
+  /** 始点 (mm) */
+  from: { x: number; y: number };
+  /** 終点 (mm) */
+  to: { x: number; y: number };
+  /** 所属レイヤー ID (表示/ロック/出力に乗る) */
+  layerId: string;
+}
+
 export interface Project {
   meta: ProjectMeta;
   /** PDF 未読込時は null */
@@ -246,6 +263,9 @@ export interface Project {
   symbols: ProjectSymbol[];
   /** Phase 2-C で追加。後方互換のため optional */
   wires?: Wire[] | undefined;
+  /** Phase 3 F-16 Sub-3 で追加 (schemaVersion 3)。後方互換のため optional。
+   *  図面に残す寸法注記。座標は symbols と同じ mm 系。 */
+  dimensions?: Dimension[] | undefined;
   /** Phase 2-A2 で追加。後方互換のため optional (未指定なら DEFAULT_GRID_CONFIG) */
   grid?: ProjectGridConfig;
 }

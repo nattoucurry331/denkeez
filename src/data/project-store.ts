@@ -12,6 +12,7 @@ import { APP_VERSION, SCHEMA_VERSION } from '../shared/constants/app';
 import { debounce } from '../utils/debounce';
 import type { Rotation } from '../pdf/pdf-loader';
 import type {
+  Dimension,
   Layer,
   Project,
   ProjectDrawing,
@@ -42,6 +43,8 @@ export type EditorMode =
   | { kind: 'scale'; firstPointPx?: { x: number; y: number } | undefined }
   // Phase 3 F-16 Sub-1: 寸法計測モード (消える計測)。2 点クリックで距離表示。
   | { kind: 'measure'; firstPointPx?: { x: number; y: number } | undefined }
+  // Phase 3 F-16 Sub-3: 寸法線モード (図面に残す)。2 点クリックで Dimension を追加。
+  | { kind: 'dimension'; firstPointPx?: { x: number; y: number } | undefined }
   | {
       kind: 'wire';
       fromSymbolId?: string | undefined;
@@ -131,6 +134,16 @@ export interface ProjectActions {
   // Phase 3 F-16 Sub-1: 寸法計測
   enterMeasureMode: () => void;
   setMeasureFirstPoint: (pointPx: { x: number; y: number } | undefined) => void;
+  // Phase 3 F-16 Sub-3: 寸法注記 (図面に残す)
+  enterDimensionMode: () => void;
+  setDimensionFirstPoint: (pointPx: { x: number; y: number } | undefined) => void;
+  addDimension: (from: { x: number; y: number }, to: { x: number; y: number }) => void;
+  updateDimensionPoints: (
+    id: string,
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+  ) => void;
+  removeDimensions: (ids: readonly string[]) => void;
   // Phase 2-C2: 配線
   enterWireMode: () => void;
   setWireFromSymbol: (symbolId: string) => void;
@@ -513,6 +526,64 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
     set({
       mode: { kind: 'measure', firstPointPx: pointPx },
     }),
+
+  // Phase 3 F-16 Sub-3: 寸法線モード + 注記 CRUD
+  enterDimensionMode: () =>
+    set({
+      mode: { kind: 'dimension' },
+      selectedIds: [],
+    }),
+
+  setDimensionFirstPoint: (pointPx) =>
+    set({
+      mode: { kind: 'dimension', firstPointPx: pointPx },
+    }),
+
+  addDimension: (from, to) => {
+    const current = get().project;
+    const targetLayerId = current.layers.some((l) => l.id === get().activeLayerId)
+      ? get().activeLayerId
+      : pickFirstUserLayerId(current.layers);
+    const dimension: Dimension = { id: generateId(), from, to, layerId: targetLayerId };
+    set({
+      project: {
+        ...current,
+        dimensions: [...(current.dimensions ?? []), dimension],
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  updateDimensionPoints: (id, from, to) => {
+    const current = get().project;
+    const dims = current.dimensions ?? [];
+    set({
+      project: {
+        ...current,
+        dimensions: dims.map((d) => (d.id === id ? { ...d, from, to } : d)),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  removeDimensions: (ids) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const current = get().project;
+    const dims = current.dimensions ?? [];
+    if (!dims.some((d) => idSet.has(d.id))) return;
+    set({
+      project: {
+        ...current,
+        dimensions: dims.filter((d) => !idSet.has(d.id)),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+      selectedIds: get().selectedIds.filter((sid) => !idSet.has(sid)),
+    });
+  },
 
   setScale: (scale) => {
     const current = get().project;

@@ -27,6 +27,7 @@ import {
   type MeasureSegment,
 } from '../../canvas/measure-overlay-layer';
 import { formatDistanceMm } from '../../utils/dimension-format';
+import { DimensionLayer } from '../../canvas/dimension-layer';
 import { WireLayer } from '../../canvas/wire-layer';
 import { WirePreviewLayer } from '../../canvas/wire-preview-layer';
 import { ScaleInputDialog } from '../dialogs/ScaleInputDialog';
@@ -70,6 +71,9 @@ export function CanvasArea(): JSX.Element {
   const setScale = useProjectStore((s) => s.setScale);
   const enterScaleMode = useProjectStore((s) => s.enterScaleMode);
   const setMeasureFirstPoint = useProjectStore((s) => s.setMeasureFirstPoint);
+  const setDimensionFirstPoint = useProjectStore((s) => s.setDimensionFirstPoint);
+  const addDimension = useProjectStore((s) => s.addDimension);
+  const removeDimensions = useProjectStore((s) => s.removeDimensions);
   const setWireFromSymbol = useProjectStore((s) => s.setWireFromSymbol);
   const appendWireWaypoint = useProjectStore((s) => s.appendWireWaypoint);
   const addWire = useProjectStore((s) => s.addWire);
@@ -157,6 +161,9 @@ export function CanvasArea(): JSX.Element {
           exitMode();
           setMeasureCursorPx(null);
           setLastMeasurement(null);
+        } else if (mode.kind === 'dimension') {
+          exitMode();
+          setMeasureCursorPx(null);
         } else {
           clearSelection();
         }
@@ -203,11 +210,19 @@ export function CanvasArea(): JSX.Element {
             removeSymbols(symbolIds);
           }
         })();
+        // Phase 3 F-16 Sub-3: 選択中の寸法注記を削除 (ロック中レイヤーは除外・連鎖なし)
+        const dims = useProjectStore.getState().project.dimensions ?? [];
+        const lockedSet = lockedLayerIds(useProjectStore.getState().project.layers);
+        const selSet = new Set(selectedIds);
+        const dimIds = dims
+          .filter((d) => selSet.has(d.id) && !lockedSet.has(d.layerId))
+          .map((d) => d.id);
+        if (dimIds.length > 0) removeDimensions(dimIds);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [mode, selectedIds, exitMode, clearSelection, removeSymbols, resetWireProgress]);
+  }, [mode, selectedIds, exitMode, clearSelection, removeSymbols, removeDimensions, resetWireProgress]);
 
   useKeyboardShortcuts({
     getViewportCenter: () =>
@@ -239,6 +254,13 @@ export function CanvasArea(): JSX.Element {
           寸法計測中: {mode.firstPointPx ? '2 点目をクリック' : '1 点目をクリック'}
           {!drawing.scale && ' ／ 縮尺未設定のため「紙面寸法」です'}
           {lastMeasurement && ` ／ 直前: ${lastMeasurement.label}`}
+          {' '}(ESC で解除)
+        </span>
+      )}
+      {mode.kind === 'dimension' && (
+        <span style={measureModeBadgeStyle}>
+          寸法線モード: {mode.firstPointPx ? '2 点目をクリックで寸法を確定' : '1 点目をクリック'}
+          {!drawing.scale && ' ／ 縮尺未設定のため「紙面寸法」です'}
           {' '}(ESC で解除)
         </span>
       )}
@@ -309,7 +331,7 @@ export function CanvasArea(): JSX.Element {
     if (mode.kind === 'scale') {
       setScaleCursorPx(point);
     }
-    if (mode.kind === 'measure') {
+    if (mode.kind === 'measure' || mode.kind === 'dimension') {
       setMeasureCursorPx(point);
     }
     if (mode.kind === 'wire') {
@@ -409,6 +431,22 @@ export function CanvasArea(): JSX.Element {
       return;
     }
 
+    if (mode.kind === 'dimension') {
+      if (!mode.firstPointPx) {
+        setDimensionFirstPoint(point);
+      } else {
+        const distance = distancePx(mode.firstPointPx, point);
+        if (distance < 1) return;
+        // 端点を mm 系で保存 (symbols と同じ座標系)
+        addDimension(
+          { x: pxToMm(mode.firstPointPx.x, scaleObj), y: pxToMm(mode.firstPointPx.y, scaleObj) },
+          { x: pxToMm(point.x, scaleObj), y: pxToMm(point.y, scaleObj) },
+        );
+        setDimensionFirstPoint(undefined);
+      }
+      return;
+    }
+
     if (mode.kind === 'wire') {
       // Phase 2-D3: ロック中レイヤーのシンボルは始点・終点にできない (listening=false で
       // 通常はそもそも target にならないが、防御として symbolId 確定後にフィルタ)
@@ -494,14 +532,17 @@ export function CanvasArea(): JSX.Element {
       : mode.kind === 'place' ||
           mode.kind === 'scale' ||
           mode.kind === 'measure' ||
+          mode.kind === 'dimension' ||
           mode.kind === 'wire'
         ? 'crosshair'
         : 'default';
 
-  // Phase 3 F-16: 進行中(1点目→カーソル)のライブ距離ラベル
+  // Phase 3 F-16: 進行中(1点目→カーソル)のライブ距離ラベル (計測・寸法線で共通)
+  const measureFirstPx =
+    mode.kind === 'measure' || mode.kind === 'dimension' ? mode.firstPointPx : undefined;
   const measureLiveLabel =
-    mode.kind === 'measure' && mode.firstPointPx && measureCursorPx
-      ? formatDistanceMm(distancePx(mode.firstPointPx, measureCursorPx) / pxPerMm, !!drawing.scale)
+    measureFirstPx && measureCursorPx
+      ? formatDistanceMm(distancePx(measureFirstPx, measureCursorPx) / pxPerMm, !!drawing.scale)
       : undefined;
 
   // Phase 2-J2: スケール未設定なら「まず縮尺を合わせましょう」を案内 (select モード時のみ)
@@ -573,10 +614,19 @@ export function CanvasArea(): JSX.Element {
             firstPointPx={mode.kind === 'scale' ? mode.firstPointPx : undefined}
             cursorPx={mode.kind === 'scale' ? scaleCursorPx ?? undefined : undefined}
           />
+          <DimensionLayer
+            pxPerMm={pxPerMm}
+            calibrated={!!drawing.scale}
+            viewportScale={viewportScale}
+          />
           <MeasureOverlayLayer
-            active={mode.kind === 'measure'}
-            firstPointPx={mode.kind === 'measure' ? mode.firstPointPx : undefined}
-            cursorPx={mode.kind === 'measure' ? measureCursorPx ?? undefined : undefined}
+            active={mode.kind === 'measure' || mode.kind === 'dimension'}
+            firstPointPx={measureFirstPx}
+            cursorPx={
+              mode.kind === 'measure' || mode.kind === 'dimension'
+                ? measureCursorPx ?? undefined
+                : undefined
+            }
             liveLabel={measureLiveLabel}
             lastMeasurement={mode.kind === 'measure' ? lastMeasurement ?? undefined : undefined}
             viewportScale={viewportScale}

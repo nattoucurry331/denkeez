@@ -93,6 +93,15 @@ const WireSchema = z.object({
   layerId: z.string().min(1).optional(),
 });
 
+// Phase 3 F-16 Sub-3: 寸法注記 (schemaVersion 3)。layerId は後方互換のため optional とし
+// project-io.ts のマイグレーションで補う (symbol/wire と同方針)。
+const DimensionSchema = z.object({
+  id: z.string().min(1),
+  from: PointSchema,
+  to: PointSchema,
+  layerId: z.string().min(1).optional(),
+});
+
 // Phase 2-D1: レイヤー (REQUIREMENTS §5.2 / F-08)
 const LayerKindSchema = z.enum(['background', 'user']);
 const LayerSchema = z.object({
@@ -113,6 +122,8 @@ export const ProjectSchema = z.object({
   symbols: z.array(ProjectSymbolSchema),
   wires: z.array(WireSchema).optional(),
   grid: ProjectGridConfigSchema.optional(),
+  // Phase 3 F-16 Sub-3
+  dimensions: z.array(DimensionSchema).optional(),
 });
 
 export type ProjectSchemaInput = z.input<typeof ProjectSchema>;
