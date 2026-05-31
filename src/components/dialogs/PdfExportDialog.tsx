@@ -26,6 +26,8 @@ interface Props {
   readonly drawingWidthMm: number;
   readonly drawingHeightMm: number;
   readonly onConfirm: (settings: PdfExportSettings) => void;
+  /** Phase 3 F-14d: 現在の設定で PDF を生成し blob URL を返す (プレビュー用)。 */
+  readonly onPreview: (settings: PdfExportSettings) => Promise<string | null>;
   readonly onCancel: () => void;
 }
 
@@ -49,10 +51,14 @@ export function PdfExportDialog({
   drawingWidthMm,
   drawingHeightMm,
   onConfirm,
+  onPreview,
   onCancel,
 }: Props): JSX.Element | null {
   const [paperSize, setPaperSize] = useState<PaperSize>('auto');
   const [orientation, setOrientation] = useState<PageOrientation>('auto');
+  // Phase 3 F-14d: 印刷プレビュー
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
   // 初期チェック状態は visible: true のレイヤーのみ
   const [checkedIds, setCheckedIds] = useState<ReadonlySet<string>>(
     () => new Set(layers.filter((l) => l.visible).map((l) => l.id)),
@@ -64,6 +70,24 @@ export function PdfExportDialog({
       setCheckedIds(new Set(layers.filter((l) => l.visible).map((l) => l.id)));
     }
   }, [open, layers]);
+
+  // 設定が変わったら古いプレビューを破棄 (内容が古くなるため)
+  useEffect(() => {
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }, [paperSize, orientation, checkedIds]);
+
+  // 閉じたらプレビューを破棄 (メモリリーク防止)
+  useEffect(() => {
+    if (!open) {
+      setPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+    }
+  }, [open]);
 
   // プレビュー: 用紙サイズと向きから実際の寸法・スケールを計算
   const layout = useMemo(
@@ -89,6 +113,16 @@ export function PdfExportDialog({
       orientation,
       layerIds: [...checkedIds],
     });
+  };
+
+  const handlePreview = async (): Promise<void> => {
+    setPreviewBusy(true);
+    const url = await onPreview({ paperSize, orientation, layerIds: [...checkedIds] });
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return url;
+    });
+    setPreviewBusy(false);
   };
 
   // 表示順は LayerPanel と同じ最上層 → 元図面 (= 配列の逆順)
@@ -178,7 +212,24 @@ export function PdfExportDialog({
           </div>
         </div>
 
+        {/* Phase 3 F-14d: 印刷プレビュー */}
+        {previewUrl && (
+          <div style={previewBoxStyle}>
+            <iframe src={previewUrl} title="PDF プレビュー" style={iframeStyle} />
+          </div>
+        )}
+
         <div style={buttonsStyle}>
+          <button
+            type="button"
+            onClick={() => void handlePreview()}
+            disabled={checkedCount === 0 || previewBusy}
+            style={previewButtonStyle}
+            title="出力前に PDF の仕上がりを確認します"
+          >
+            {previewBusy ? 'プレビュー生成中…' : '🔍 プレビュー'}
+          </button>
+          <span style={{ flex: 1 }} />
           <button
             type="button"
             onClick={handleConfirm}
@@ -285,10 +336,32 @@ const badgeStyle: React.CSSProperties = {
   fontSize: '0.72rem',
   color: '#888',
 };
+const previewBoxStyle: React.CSSProperties = {
+  marginTop: 12,
+  border: '1px solid #ccc',
+  borderRadius: 4,
+  overflow: 'hidden',
+  background: '#525659',
+};
+const iframeStyle: React.CSSProperties = {
+  width: '100%',
+  height: 360,
+  border: 'none',
+  display: 'block',
+};
+const previewButtonStyle: React.CSSProperties = {
+  background: '#fff',
+  color: '#0080ff',
+  border: '1px solid #0080ff',
+  padding: '6px 12px',
+  borderRadius: 4,
+  cursor: 'pointer',
+};
 const buttonsStyle: React.CSSProperties = {
   display: 'flex',
   gap: 8,
   marginTop: 16,
+  alignItems: 'center',
   justifyContent: 'flex-end',
 };
 const primaryButtonStyle: React.CSSProperties = {
