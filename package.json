@@ -1,7 +1,7 @@
 {
   "name": "denkeez",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "description": "Denkeez (デンキーズ・仮称) — 電気工事業者向け平面図エディタ",
   "scripts": {
