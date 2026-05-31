@@ -116,6 +116,10 @@ function buildProject(
   if (parsed.dimensions !== undefined) {
     result.dimensions = parsed.dimensions.map((d) => canonicalizeDimension(d, fallbackLayerId));
   }
+  // Phase 3 F-14: titleBlock (あればそのまま引き継ぐ)
+  if (parsed.titleBlock !== undefined) {
+    result.titleBlock = parsed.titleBlock;
+  }
   return result;
 }
 

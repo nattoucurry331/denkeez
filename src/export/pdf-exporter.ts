@@ -33,6 +33,8 @@ import { getWirePoints } from '../utils/wire-geometry';
 import { getLayerColor } from '../data/layer-helpers';
 import { computeEffectiveSymbolScale } from '../data/render-settings-store';
 import { formatDistanceMmAscii } from '../utils/dimension-format';
+import { formatScaleRatio } from '../utils/scale-ratio';
+import { computeTitleRows, titleBlockOrigin, renderTitleBlockImage } from './title-block';
 
 const MM_PER_INCH = 25.4;
 const PT_PER_INCH = 72;
@@ -178,6 +180,28 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
 
   // Phase 3 F-16 Sub-4: 寸法注記をシンボルの上に描画 (レイヤーフィルタ適用)
   drawDimensions(pdf, project.dimensions ?? [], allowedLayers, project.layers, !!drawing.scale, tx, ty);
+
+  // Phase 3 F-14: 表題欄を最前面に合成 (日本語は canvas でラスター描画した画像を貼る)
+  if (project.titleBlock?.enabled) {
+    const scaleText = formatScaleRatio(drawing, backgroundCanvas.width) ?? '(縮尺未設定)';
+    const rows = computeTitleRows(project.titleBlock, scaleText);
+    const img = renderTitleBlockImage(rows, { widthMm: 85 });
+    if (img.dataUrl) {
+      const origin = titleBlockOrigin(
+        project.titleBlock.position,
+        layout.pageWidthMm,
+        layout.pageHeightMm,
+        img.widthMm,
+        img.heightMm,
+        3,
+      );
+      try {
+        pdf.addImage(img.dataUrl, 'PNG', origin.x, origin.y, img.widthMm, img.heightMm);
+      } catch {
+        // 表題欄描画に失敗しても本体出力は止めない
+      }
+    }
+  }
 
   const buffer = pdf.output('arraybuffer');
   return new Uint8Array(buffer);

@@ -252,6 +252,31 @@ export interface Dimension {
   layerId: string;
 }
 
+/** Phase 3 F-14: 表題欄の配置位置。 */
+export type TitleBlockPosition = 'bottom-right' | 'top-right' | 'bottom-left' | 'top-left';
+
+/**
+ * Phase 3 F-14: 図面の表題欄(タイトルブロック)設定。
+ * PDF 出力時に図面の隅に合成する。縮尺は drawing.scale から自動算出するため保持しない。
+ * 値は ProjectMeta ではなくここに保持する(機微情報を meta に増やさない方針)。
+ */
+export interface TitleBlockConfig {
+  /** PDF 出力に表題欄を載せるか */
+  enabled: boolean;
+  /** 配置位置 (既定 bottom-right) */
+  position: TitleBlockPosition;
+  /** 工事名 */
+  projectName: string;
+  /** 図面名 */
+  drawingName: string;
+  /** 日付 (自由文字列。例 "2026-05-31") */
+  date: string;
+  /** 作成者 */
+  author: string;
+  /** 会社名 */
+  company: string;
+}
+
 export interface Project {
   meta: ProjectMeta;
   /** PDF 未読込時は null */
@@ -266,6 +291,8 @@ export interface Project {
   /** Phase 3 F-16 Sub-3 で追加 (schemaVersion 3)。後方互換のため optional。
    *  図面に残す寸法注記。座標は symbols と同じ mm 系。 */
   dimensions?: Dimension[] | undefined;
+  /** Phase 3 F-14 で追加 (schemaVersion 3 内で追加)。表題欄設定。未設定なら表題欄なし。 */
+  titleBlock?: TitleBlockConfig | undefined;
   /** Phase 2-A2 で追加。後方互換のため optional (未指定なら DEFAULT_GRID_CONFIG) */
   grid?: ProjectGridConfig;
 }
