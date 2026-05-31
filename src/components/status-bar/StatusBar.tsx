@@ -6,23 +6,7 @@ import { useProjectStore } from '../../data/project-store';
 import { useViewportStore } from '../../data/viewport-store';
 import { DEFAULT_GRID_CONFIG, GRID_SPACING_OPTIONS } from '../../data/types';
 import { APP_VERSION } from '../../shared/constants/app';
-
-function computeScaleRatio(
-  drawing: {
-    widthMm: number;
-    scale?: { pixelDistanceCanvas: number; realDistanceMm: number } | undefined;
-  },
-  canvasWidth: number,
-): number | null {
-  if (!drawing.scale || canvasWidth === 0 || drawing.widthMm === 0) return null;
-  // 図面上 1mm = 紙面 mm/px = drawing.widthMm / canvasWidth
-  // 実寸 1mm = scale.pixelDistanceCanvas / scale.realDistanceMm px
-  // 縮尺 N = 実寸 mm / 紙面 mm
-  const ratio =
-    (drawing.scale.realDistanceMm * canvasWidth) /
-    (drawing.scale.pixelDistanceCanvas * drawing.widthMm);
-  return Math.round(ratio);
-}
+import { computeScaleRatio } from '../../utils/scale-ratio';
 
 export function StatusBar(): JSX.Element {
   const viewportScale = useViewportStore((s) => s.scale);

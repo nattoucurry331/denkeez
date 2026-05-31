@@ -69,6 +69,15 @@ export async function selectCsvFileToSave(defaultName?: string): Promise<string 
   return path;
 }
 
+/** 拾い出し JSON 出力先選択ダイアログ (Phase 3 F-21 / 3-I2)。 */
+export async function selectJsonFileToSave(defaultName?: string): Promise<string | null> {
+  const path = await save({
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+    defaultPath: defaultName ?? 'denkeez-bom.json',
+  });
+  return path;
+}
+
 /** ファイルパスからバイナリを読み込み ArrayBuffer として返す。 */
 export async function readBinaryFile(path: string): Promise<ArrayBuffer> {
   const bytes = await readFile(path);

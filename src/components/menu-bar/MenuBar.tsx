@@ -8,6 +8,7 @@ import {
   selectProjectFileToSave,
   selectPdfFileToSave,
   selectCsvFileToSave,
+  selectJsonFileToSave,
   writeProjectFile,
   writeBinaryFile,
   askConfirm,
@@ -18,6 +19,8 @@ import { serializeProject } from '../../data/project-io';
 import { openPdfIntoStore, openProjectIntoStore } from '../../tauri/open-actions';
 import { exportProjectAsPdf, suggestedExportName } from '../../export/pdf-exporter';
 import { generateBomCsv, suggestedBomCsvName } from '../../export/csv-exporter';
+import { generateBomJson, suggestedBomJsonName } from '../../export/json-exporter';
+import { formatScaleRatio } from '../../utils/scale-ratio';
 import {
   PdfExportDialog,
   type PdfExportSettings,
@@ -170,6 +173,28 @@ export function MenuBar(): JSX.Element {
       setInfo(`拾い出し CSV を出力しました: ${basename(path)} (${filterDesc})`);
     });
 
+  // Phase 3 F-21 / 3-I2: 拾い出し JSON 出力 (見積管理アプリへのファイル受け渡し I/F)。
+  const handleExportJson = (): Promise<void> =>
+    wrap(async () => {
+      const visibleOnly = readBomVisibleOnlyFromLocalStorage();
+      const drawingScale =
+        project.drawing && pdfCanvas
+          ? formatScaleRatio(project.drawing, pdfCanvas.width)
+          : null;
+      const json = generateBomJson(
+        project.symbols,
+        project.wires ?? [],
+        project.layers,
+        { visibleOnly },
+        { siteName: project.meta.name, drawingScale },
+      );
+      const path = await selectJsonFileToSave(suggestedBomJsonName(project.meta.name));
+      if (!path) return;
+      await writeBinaryFile(path, new TextEncoder().encode(json));
+      const filterDesc = visibleOnly ? '可視レイヤーのみ' : '全レイヤー';
+      setInfo(`拾い出し JSON を出力しました: ${basename(path)} (${filterDesc})`);
+    });
+
   const handleRotatePdf = (): Promise<void> =>
     wrap(async () => {
       if (!pdfBuffer || !project.drawing) {
@@ -229,6 +254,14 @@ export function MenuBar(): JSX.Element {
         title="シンボル種別と配線種別ごとに集計し CSV ファイルとして保存 (BomPanel のフィルタ設定を踏襲)"
       >
         拾い出し CSV 出力
+      </button>
+      <button
+        onClick={handleExportJson}
+        disabled={busy}
+        type="button"
+        title="拾い出しを JSON で出力し、見積管理アプリに取り込む (種別・規格・数量・回路・縮尺)"
+      >
+        見積用 JSON 出力
       </button>
       <span style={separatorStyle}>|</span>
       <button
