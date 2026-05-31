@@ -43,6 +43,7 @@ export function MenuBar(): JSX.Element {
   const applyPdfRotation = useProjectStore((s) => s.applyPdfRotation);
   const removeSymbols = useProjectStore((s) => s.removeSymbols);
   const enterScaleMode = useProjectStore((s) => s.enterScaleMode);
+  const enterMeasureMode = useProjectStore((s) => s.enterMeasureMode);
   const exitMode = useProjectStore((s) => s.exitMode);
   const setScale = useProjectStore((s) => s.setScale);
   const enterWireMode = useProjectStore((s) => s.enterWireMode);
@@ -272,6 +273,15 @@ export function MenuBar(): JSX.Element {
         title="図面上の 2 点をクリックして実寸を入力 (F-04)"
       >
         {mode.kind === 'scale' ? '✓ スケール設定中 (ESC で解除)' : 'スケール設定'}
+      </button>
+      <button
+        onClick={() => (mode.kind === 'measure' ? exitMode() : enterMeasureMode())}
+        disabled={busy || !pdfCanvas}
+        type="button"
+        style={mode.kind === 'measure' ? activeButtonStyle : undefined}
+        title="寸法を測る: 図面上の 2 点をクリックすると距離を表示 (校正済みなら実寸)"
+      >
+        {mode.kind === 'measure' ? '✓ 寸法計測中 (ESC で解除)' : '寸法を測る'}
       </button>
       <button
         onClick={() => (mode.kind === 'wire' ? exitMode() : enterWireMode())}

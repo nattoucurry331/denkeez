@@ -40,6 +40,8 @@ export type EditorMode =
   | { kind: 'select' }
   | { kind: 'place'; symbolType: string; preset?: PlacePresetInfo }
   | { kind: 'scale'; firstPointPx?: { x: number; y: number } | undefined }
+  // Phase 3 F-16 Sub-1: 寸法計測モード (消える計測)。2 点クリックで距離表示。
+  | { kind: 'measure'; firstPointPx?: { x: number; y: number } | undefined }
   | {
       kind: 'wire';
       fromSymbolId?: string | undefined;
@@ -126,6 +128,9 @@ export interface ProjectActions {
   enterScaleMode: () => void;
   setScaleFirstPoint: (pointPx: { x: number; y: number } | undefined) => void;
   setScale: (scale: ProjectDrawingScale | undefined) => void;
+  // Phase 3 F-16 Sub-1: 寸法計測
+  enterMeasureMode: () => void;
+  setMeasureFirstPoint: (pointPx: { x: number; y: number } | undefined) => void;
   // Phase 2-C2: 配線
   enterWireMode: () => void;
   setWireFromSymbol: (symbolId: string) => void;
@@ -495,6 +500,18 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
   setScaleFirstPoint: (pointPx) =>
     set({
       mode: { kind: 'scale', firstPointPx: pointPx },
+    }),
+
+  // Phase 3 F-16 Sub-1: 寸法計測モード (スキーマ非依存・消える計測)
+  enterMeasureMode: () =>
+    set({
+      mode: { kind: 'measure' },
+      selectedIds: [],
+    }),
+
+  setMeasureFirstPoint: (pointPx) =>
+    set({
+      mode: { kind: 'measure', firstPointPx: pointPx },
     }),
 
   setScale: (scale) => {
