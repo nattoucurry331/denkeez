@@ -12,6 +12,7 @@ import {
   fileToDataUrl,
   clipboardToDataUrl,
   downscaleDataUrl,
+  cropImportedImage,
   formatBytes,
   type ImportedImage,
 } from '../../utils/image-import';
@@ -114,6 +115,15 @@ export function ProductImportDialog({
   // F: 取込元の生 dataURL を保持し、透過 ON/OFF を元画像から処理し直す (高品質)
   const [srcDataUrl, setSrcDataUrl] = useState<string | null>(null);
   const [transparentBg, setTransparentBg] = useState(false);
+  // H: 切り抜き。originalSrc は取込直後の元画像 (元に戻す用、不変)。
+  //    srcDataUrl は作業中ソース (切り抜きで差し替わる)。selRect は枠内のドラッグ選択 (px)。
+  const [originalSrc, setOriginalSrc] = useState<string | null>(null);
+  const [selRect, setSelRect] = useState<{ x: number; y: number; w: number; h: number } | null>(
+    null,
+  );
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const cropSurfaceRef = useRef<HTMLDivElement>(null);
+  const previewImgRef = useRef<HTMLImageElement>(null);
   // E: 図面上の表示幅 (紙面 mm)
   const [widthMm, setWidthMm] = useState(PRODUCT_IMAGE_DEFAULT_WIDTH_MM);
   // G: 重複確認の保留状態 (既存プリセットと同一メーカー+品番のとき)
@@ -142,6 +152,9 @@ export function ProductImportDialog({
       setPendingSave(null);
       setSrcDataUrl(null);
       setTransparentBg(false);
+      setOriginalSrc(null);
+      setSelRect(null);
+      dragStartRef.current = null;
     }
   }, [open]);
 
@@ -150,6 +163,8 @@ export function ProductImportDialog({
     setError(null);
     try {
       const src = await fileToDataUrl(file);
+      setOriginalSrc(src);
+      setSelRect(null);
       setSrcDataUrl(src);
     } catch (e) {
       setError(e instanceof Error ? e.message : '画像の取込に失敗しました');
@@ -164,6 +179,8 @@ export function ProductImportDialog({
         .then((src) => {
           if (src) {
             setError(null);
+            setOriginalSrc(src);
+            setSelRect(null);
             setSrcDataUrl(src);
           }
         })
@@ -192,6 +209,85 @@ export function ProductImportDialog({
       cancelled = true;
     };
   }, [open, srcDataUrl, transparentBg]);
+
+  // H: 切り抜き選択 (枠内ドラッグ)。座標は crop サーフェス (枠) のローカル px。
+  const pointInSurface = (
+    e: React.MouseEvent,
+  ): { x: number; y: number } | null => {
+    const el = cropSurfaceRef.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  const onCropMouseDown = (e: React.MouseEvent): void => {
+    if (!image) return;
+    const p = pointInSurface(e);
+    if (!p) return;
+    dragStartRef.current = p;
+    setSelRect({ x: p.x, y: p.y, w: 0, h: 0 });
+  };
+  const onCropMouseMove = (e: React.MouseEvent): void => {
+    const s = dragStartRef.current;
+    if (!s) return;
+    const p = pointInSurface(e);
+    if (!p) return;
+    setSelRect({
+      x: Math.min(s.x, p.x),
+      y: Math.min(s.y, p.y),
+      w: Math.abs(p.x - s.x),
+      h: Math.abs(p.y - s.y),
+    });
+  };
+  const onCropMouseUp = (): void => {
+    dragStartRef.current = null;
+  };
+
+  const canCrop = Boolean(image && selRect && selRect.w >= 6 && selRect.h >= 6);
+  const canRestoreCrop = Boolean(originalSrc && srcDataUrl !== originalSrc);
+
+  // 選択枠 (枠内 px) を、表示中の画像要素の実描画矩形から自然 px に変換して切り抜く。
+  const handleCrop = async (): Promise<void> => {
+    const surf = cropSurfaceRef.current;
+    const imgEl = previewImgRef.current;
+    if (!image || !selRect || !surf || !imgEl) return;
+    const surfRect = surf.getBoundingClientRect();
+    const imgRect = imgEl.getBoundingClientRect();
+    const drawW = imgRect.width;
+    const drawH = imgRect.height;
+    const natW = imgEl.naturalWidth || 1;
+    const natH = imgEl.naturalHeight || 1;
+    if (drawW <= 0 || drawH <= 0) return;
+    // 画像の実描画矩形 (枠内オフセット)
+    const offX = imgRect.left - surfRect.left;
+    const offY = imgRect.top - surfRect.top;
+    const scaleX = natW / drawW;
+    const scaleY = natH / drawH;
+    let sx = (selRect.x - offX) * scaleX;
+    let sy = (selRect.y - offY) * scaleY;
+    let sw = selRect.w * scaleX;
+    let sh = selRect.h * scaleY;
+    sx = Math.max(0, Math.min(sx, natW - 1));
+    sy = Math.max(0, Math.min(sy, natH - 1));
+    sw = Math.max(1, Math.min(sw, natW - sx));
+    sh = Math.max(1, Math.min(sh, natH - sy));
+    if (sw < 2 || sh < 2) {
+      setSelRect(null);
+      return;
+    }
+    try {
+      const cropped = await cropImportedImage(image.dataUrl, { sx, sy, sw, sh }, { maxEdge: 512 });
+      setSelRect(null);
+      // 切り抜き結果を新しいソースにする → 透過 effect が再処理する
+      setSrcDataUrl(cropped.dataUrl);
+    } catch {
+      setError('切り抜きに失敗しました');
+    }
+  };
+  const handleRestoreCrop = (): void => {
+    if (!originalSrc) return;
+    setSelRect(null);
+    setSrcDataUrl(originalSrc);
+  };
 
   const effectiveName =
     displayName.trim() || [maker, partNumber].filter((s) => s.trim()).join(' ').trim();
@@ -367,10 +463,13 @@ export function ProductImportDialog({
           <div style={imageColStyle}>
             <label style={labelStyle}>商品画像</label>
             <div
+              ref={cropSurfaceRef}
               style={{
                 ...dropZoneStyle,
+                position: 'relative',
                 ...(image && transparentBg ? checkerBgStyle : {}),
                 ...(dragOver ? dropZoneActiveStyle : {}),
+                ...(image ? { cursor: 'crosshair' } : {}),
               }}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -383,9 +482,19 @@ export function ProductImportDialog({
                 const file = e.dataTransfer.files[0];
                 if (file) void handleFile(file);
               }}
+              onMouseDown={onCropMouseDown}
+              onMouseMove={onCropMouseMove}
+              onMouseUp={onCropMouseUp}
+              onMouseLeave={onCropMouseUp}
             >
               {image ? (
-                <img src={image.dataUrl} alt="プレビュー" style={previewImgStyle} />
+                <img
+                  ref={previewImgRef}
+                  src={image.dataUrl}
+                  alt="プレビュー"
+                  style={previewImgStyle}
+                  draggable={false}
+                />
               ) : (
                 <div style={dropHintStyle}>
                   <p style={dropHintIconStyle}>📋</p>
@@ -393,19 +502,59 @@ export function ProductImportDialog({
                   <p style={dropHintSmallStyle}>ドラッグ&amp;ドロップでも取り込めます</p>
                 </div>
               )}
+              {image && selRect && selRect.w > 0 && selRect.h > 0 && (
+                <div
+                  style={{
+                    ...selRectStyle,
+                    left: selRect.x,
+                    top: selRect.y,
+                    width: selRect.w,
+                    height: selRect.h,
+                  }}
+                />
+              )}
             </div>
-            <label style={fileLinkStyle}>
-              または画像ファイルを選ぶ
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void handleFile(file);
-                }}
-                style={{ display: 'none' }}
-              />
-            </label>
+            <div style={cropRowStyle}>
+              <label style={fileLinkStyle}>
+                または画像ファイルを選ぶ
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleFile(file);
+                  }}
+                  style={{ display: 'none' }}
+                />
+              </label>
+              {image && (
+                <span style={cropBtnGroupStyle}>
+                  <button
+                    type="button"
+                    onClick={() => void handleCrop()}
+                    disabled={!canCrop}
+                    style={cropBtnStyle}
+                    title="枠内をドラッグで囲ってから押すと、その範囲で切り抜きます"
+                  >
+                    ✂ 切り抜き
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRestoreCrop}
+                    disabled={!canRestoreCrop}
+                    style={cropBtnStyle}
+                    title="切り抜く前の画像に戻す"
+                  >
+                    ↩ 元に戻す
+                  </button>
+                </span>
+              )}
+            </div>
+            {image && (
+              <p style={dropHintSmallStyle}>
+                画像の上をドラッグして範囲を囲み「✂ 切り抜き」で余白を除けます。
+              </p>
+            )}
             {image && (
               <p style={sizeHintStyle}>
                 取込サイズ: 約 {formatBytes(image.approxBytes)}
@@ -696,10 +845,32 @@ const previewImgStyle: React.CSSProperties = {
 };
 const fileLinkStyle: React.CSSProperties = {
   display: 'inline-block',
-  textAlign: 'center',
   fontSize: '0.78rem',
   color: '#0066cc',
   textDecoration: 'underline',
+  cursor: 'pointer',
+};
+const selRectStyle: React.CSSProperties = {
+  position: 'absolute',
+  border: '1.5px dashed #0080ff',
+  background: 'rgba(0,128,255,0.12)',
+  pointerEvents: 'none',
+};
+const cropRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 6,
+  flexWrap: 'wrap',
+};
+const cropBtnGroupStyle: React.CSSProperties = { display: 'flex', gap: 4 };
+const cropBtnStyle: React.CSSProperties = {
+  fontSize: '0.7rem',
+  padding: '3px 7px',
+  border: '1px solid #ccc',
+  borderRadius: 3,
+  background: '#fff',
+  color: '#444',
   cursor: 'pointer',
 };
 const sizeHintStyle: React.CSSProperties = { fontSize: '0.72rem', color: '#888' };

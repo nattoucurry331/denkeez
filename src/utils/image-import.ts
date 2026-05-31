@@ -30,6 +30,37 @@ export interface DownscaleOptions {
   removeWhiteBg?: boolean;
   /** 「白」とみなすしきい値 (255 からの許容差、既定 30)。removeWhiteBg 時のみ使用。 */
   whiteThreshold?: number;
+  /**
+   * Phase 2-K5 (H): 元画像から切り抜く矩形 (元画像の自然ピクセル座標)。
+   * 指定すると drawImage の転送元矩形になり、aspectRatio は sw/sh で再計算する。
+   */
+  crop?: { sx: number; sy: number; sw: number; sh: number };
+}
+
+/**
+ * Phase 2-K5 (H): objectFit:contain で表示された画像の「実際の描画矩形」を求める純粋関数。
+ * コンテナ内でレターボックス (上下 or 左右の余白) を考慮した {x,y,w,h} を返す。
+ * aspectRatio <= 0 やコンテナ 0 のときはコンテナ全体を返す。
+ */
+export function computeContainedRect(
+  containerW: number,
+  containerH: number,
+  aspectRatio: number,
+): { x: number; y: number; w: number; h: number } {
+  if (containerW <= 0 || containerH <= 0 || aspectRatio <= 0 || !Number.isFinite(aspectRatio)) {
+    return { x: 0, y: 0, w: Math.max(0, containerW), h: Math.max(0, containerH) };
+  }
+  const containerAspect = containerW / containerH;
+  if (aspectRatio > containerAspect) {
+    // 画像の方が横長 → 幅いっぱい、上下に余白
+    const w = containerW;
+    const h = containerW / aspectRatio;
+    return { x: 0, y: (containerH - h) / 2, w, h };
+  }
+  // 画像の方が縦長 → 高さいっぱい、左右に余白
+  const h = containerH;
+  const w = containerH * aspectRatio;
+  return { x: (containerW - w) / 2, y: 0, w, h };
 }
 
 /**
@@ -100,18 +131,25 @@ export async function downscaleDataUrl(
     removeWhiteBg = false,
     whiteThreshold = 30,
   } = options;
+  const { crop } = options;
   // 透過する場合は PNG 必須 (JPEG は透過を保持できない)
   const isPng = keepPng || removeWhiteBg;
   const img = await loadImage(srcDataUrl);
   const naturalW = img.naturalWidth || 1;
   const naturalH = img.naturalHeight || 1;
-  const aspectRatio = naturalW / naturalH;
+
+  // H: crop があれば転送元矩形を自然座標にクランプ。無ければ全体。
+  const srcX = crop ? Math.max(0, Math.min(crop.sx, naturalW - 1)) : 0;
+  const srcY = crop ? Math.max(0, Math.min(crop.sy, naturalH - 1)) : 0;
+  const srcW = crop ? Math.max(1, Math.min(crop.sw, naturalW - srcX)) : naturalW;
+  const srcH = crop ? Math.max(1, Math.min(crop.sh, naturalH - srcY)) : naturalH;
+  const aspectRatio = srcW / srcH;
 
   // 縮小後サイズ (長辺を maxEdge に収める。元が小さければ拡大しない)
-  const longEdge = Math.max(naturalW, naturalH);
+  const longEdge = Math.max(srcW, srcH);
   const ratio = longEdge > maxEdge ? maxEdge / longEdge : 1;
-  const outW = Math.max(1, Math.round(naturalW * ratio));
-  const outH = Math.max(1, Math.round(naturalH * ratio));
+  const outW = Math.max(1, Math.round(srcW * ratio));
+  const outH = Math.max(1, Math.round(srcH * ratio));
 
   const canvas = document.createElement('canvas');
   canvas.width = outW;
@@ -123,7 +161,7 @@ export async function downscaleDataUrl(
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, outW, outH);
   }
-  ctx.drawImage(img, 0, 0, outW, outH);
+  ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
 
   // F: 白背景の透明化 (四隅が白いときのみ作用)
   if (removeWhiteBg) {
@@ -135,6 +173,18 @@ export async function downscaleDataUrl(
   const mime = isPng ? 'image/png' : 'image/jpeg';
   const dataUrl = isPng ? canvas.toDataURL(mime) : canvas.toDataURL(mime, quality);
   return { dataUrl, aspectRatio, approxBytes: estimateDataUrlBytes(dataUrl) };
+}
+
+/**
+ * Phase 2-K5 (H): 元 dataURL から矩形 (自然座標) を切り抜いて ImportedImage を返す。
+ * 切り抜き品質を保つため既定で PNG 出力 (keepPng)。
+ */
+export async function cropImportedImage(
+  srcDataUrl: string,
+  crop: { sx: number; sy: number; sw: number; sh: number },
+  options: Omit<DownscaleOptions, 'crop'> = {},
+): Promise<ImportedImage> {
+  return downscaleDataUrl(srcDataUrl, { keepPng: true, ...options, crop });
 }
 
 /** クリップボード貼付 (ClipboardItem / paste イベントの items) から最初の画像を取り込む */
