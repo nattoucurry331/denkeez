@@ -16,6 +16,7 @@ import { PresetEditorDialog } from '../dialogs/PresetEditorDialog';
 import {
   ProductImportDialog,
   type ProductImportResult,
+  type SaveMode,
 } from '../dialogs/ProductImportDialog';
 
 export function SymbolPalette(): JSX.Element {
@@ -29,6 +30,7 @@ export function SymbolPalette(): JSX.Element {
   const addPreset = usePresetStore((s) => s.addPreset);
   const updatePreset = usePresetStore((s) => s.updatePreset);
   const removePreset = usePresetStore((s) => s.removePreset);
+  const findProductPresetByKey = usePresetStore((s) => s.findProductPresetByKey);
 
   // Phase 2-I2: メーカー商品取込ダイアログ
   const [productImportOpen, setProductImportOpen] = useState(false);
@@ -84,30 +86,24 @@ export function SymbolPalette(): JSX.Element {
     image: { dataUrl: r.image.dataUrl, aspectRatio: r.image.aspectRatio, widthMm: r.widthMm },
   });
 
-  // 同一メーカー+品番の商品プリセットを探す (品番が空なら重複判定しない)。
-  // 2-K1 では暗黙に上書きし、明示の確認バナーは 2-K3 (G) で追加する。
-  const findProductPresetId = (r: ProductImportResult): string | null => {
-    const part = r.partNumber.trim();
-    if (part === '') return null;
-    const maker = r.maker.trim();
-    const hit = presets.find(
-      (p) =>
-        p.baseType === 'product-image' &&
-        typeof p.defaultProperties.maker === 'string' &&
-        p.defaultProperties.maker.trim() === maker &&
-        typeof p.defaultProperties.partNumber === 'string' &&
-        p.defaultProperties.partNumber.trim() === part,
-    );
-    return hit ? hit.id : null;
+  // G: 重複確認用。同一メーカー+品番の既存プリセットを返す (品番空なら null)。
+  const findProductDuplicate = (
+    maker: string,
+    partNumber: string,
+  ): { displayName: string } | null => {
+    const hit = findProductPresetByKey(maker, partNumber);
+    return hit ? { displayName: hit.displayName } : null;
   };
 
   // 保存 (新規 or 上書き) して、確定したプリセット id を返す。
-  const upsertProductPreset = (r: ProductImportResult): string => {
-    const dupId = findProductPresetId(r);
+  const commitProductPreset = (r: ProductImportResult, mode: SaveMode): string => {
     const input = productPresetInput(r);
-    if (dupId) {
-      updatePreset(dupId, input);
-      return dupId;
+    if (mode === 'overwrite') {
+      const existing = findProductPresetByKey(r.maker, r.partNumber);
+      if (existing) {
+        updatePreset(existing.id, input);
+        return existing.id;
+      }
     }
     return addPreset(input);
   };
@@ -119,14 +115,14 @@ export function SymbolPalette(): JSX.Element {
   };
 
   // 保存のみ
-  const handleProductSavePreset = (r: ProductImportResult): void => {
-    upsertProductPreset(r);
+  const handleProductSavePreset = (r: ProductImportResult, mode: SaveMode): void => {
+    commitProductPreset(r, mode);
     setProductImportOpen(false);
   };
 
   // 保存して配置 (主アクション): 保存した実プリセット id で配置モードに入る
-  const handleProductSaveAndPlace = (r: ProductImportResult): void => {
-    const id = upsertProductPreset(r);
+  const handleProductSaveAndPlace = (r: ProductImportResult, mode: SaveMode): void => {
+    const id = commitProductPreset(r, mode);
     enterPlaceMode('product-image', placeInfoFor(r, id));
     setProductImportOpen(false);
   };
@@ -298,6 +294,7 @@ export function SymbolPalette(): JSX.Element {
         onSavePreset={handleProductSavePreset}
         onSaveAndPlace={handleProductSaveAndPlace}
         scaleConfigured={scaleConfigured}
+        findDuplicate={findProductDuplicate}
         onCancel={() => setProductImportOpen(false)}
       />
     </aside>
