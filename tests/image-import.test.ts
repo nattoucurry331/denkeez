@@ -2,7 +2,7 @@
 // canvas 依存の downscaleDataUrl は jsdom では再現できないため、ピクセル処理関数のみ検証。
 
 import { describe, it, expect } from 'vitest';
-import { removeWhiteBackgroundPixels } from '../src/utils/image-import';
+import { removeWhiteBackgroundPixels, computeContainedRect } from '../src/utils/image-import';
 
 /** w×h の RGBA バッファを作るヘルパ。fill(x,y) で各画素の色を決める。 */
 function makeImage(
@@ -92,5 +92,33 @@ describe('removeWhiteBackgroundPixels', () => {
     for (let i = 0; i < data.length; i += 4) {
       expect(data[i + 3]).toBe(0);
     }
+  });
+});
+
+describe('computeContainedRect', () => {
+  it('コンテナと同じ比率なら余白なしで埋める', () => {
+    const r = computeContainedRect(200, 100, 2); // aspect 2 = 200/100
+    expect(r).toEqual({ x: 0, y: 0, w: 200, h: 100 });
+  });
+
+  it('画像が横長なら上下にレターボックス (高さが縮む)', () => {
+    const r = computeContainedRect(200, 200, 2); // 横長画像を正方コンテナへ
+    expect(r.w).toBe(200);
+    expect(r.h).toBe(100);
+    expect(r.x).toBe(0);
+    expect(r.y).toBe(50);
+  });
+
+  it('画像が縦長なら左右にレターボックス (幅が縮む)', () => {
+    const r = computeContainedRect(200, 200, 0.5); // 縦長画像
+    expect(r.h).toBe(200);
+    expect(r.w).toBe(100);
+    expect(r.y).toBe(0);
+    expect(r.x).toBe(50);
+  });
+
+  it('aspectRatio <= 0 やコンテナ 0 はコンテナ全体を返す', () => {
+    expect(computeContainedRect(120, 80, 0)).toEqual({ x: 0, y: 0, w: 120, h: 80 });
+    expect(computeContainedRect(0, 0, 1)).toEqual({ x: 0, y: 0, w: 0, h: 0 });
   });
 });
