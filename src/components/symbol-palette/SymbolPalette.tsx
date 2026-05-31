@@ -22,6 +22,8 @@ export function SymbolPalette(): JSX.Element {
   const mode = useProjectStore((s) => s.mode);
   const enterPlaceMode = useProjectStore((s) => s.enterPlaceMode);
   const exitMode = useProjectStore((s) => s.exitMode);
+  // Phase 2-K2: 取込ダイアログのプレビュー補足バッジ用 (縮尺が校正済みか)
+  const scaleConfigured = useProjectStore((s) => s.project.drawing?.scale !== undefined);
 
   const presets = usePresetStore((s) => s.presets);
   const addPreset = usePresetStore((s) => s.addPreset);
@@ -66,7 +68,7 @@ export function SymbolPalette(): JSX.Element {
       partNumber: r.partNumber,
       ...(r.spec ? { spec: r.spec } : {}),
     },
-    image: { dataUrl: r.image.dataUrl, aspectRatio: r.image.aspectRatio },
+    image: { dataUrl: r.image.dataUrl, aspectRatio: r.image.aspectRatio, widthMm: r.widthMm },
   });
 
   const placeInfoFor = (
@@ -79,7 +81,7 @@ export function SymbolPalette(): JSX.Element {
       partNumber: r.partNumber,
       ...(r.spec ? { spec: r.spec } : {}),
     },
-    image: { dataUrl: r.image.dataUrl, aspectRatio: r.image.aspectRatio },
+    image: { dataUrl: r.image.dataUrl, aspectRatio: r.image.aspectRatio, widthMm: r.widthMm },
   });
 
   // 同一メーカー+品番の商品プリセットを探す (品番が空なら重複判定しない)。
@@ -295,6 +297,7 @@ export function SymbolPalette(): JSX.Element {
         onPlace={handleProductPlace}
         onSavePreset={handleProductSavePreset}
         onSaveAndPlace={handleProductSaveAndPlace}
+        scaleConfigured={scaleConfigured}
         onCancel={() => setProductImportOpen(false)}
       />
     </aside>

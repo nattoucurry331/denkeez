@@ -15,6 +15,22 @@ import {
   type ImportedImage,
 } from '../../utils/image-import';
 import { openExternalUrl } from '../../tauri/api';
+import {
+  useRenderSettingsStore,
+} from '../../data/render-settings-store';
+import {
+  PRODUCT_IMAGE_DEFAULT_WIDTH_MM,
+  SIZE_WIDTH_MIN,
+  SIZE_WIDTH_MAX,
+  SIZE_PRESETS,
+  PREVIEW_SCALE_BAR_MM,
+  PRODUCT_PREVIEW_PX_PER_MM,
+  clampWidthMm,
+  computeProductPreviewPx,
+} from '../../utils/product-size';
+
+// 後方互換: 既存 import 元 (CanvasArea 等) のためここからも再エクスポート。
+export { PRODUCT_IMAGE_DEFAULT_WIDTH_MM } from '../../utils/product-size';
 
 /**
  * メーカーと品番から公式検索ページの URL を組み立てる。
@@ -35,9 +51,6 @@ function officialSearchUrl(maker: string, partNumber: string): string {
   return `https://www.google.com/search?q=${encodeURIComponent(term.trim())}`;
 }
 
-/** 配置時のデフォルト表示幅 (紙面 mm)。JIS 記号 (φ5mm 円) より少し大きめ */
-export const PRODUCT_IMAGE_DEFAULT_WIDTH_MM = 12;
-
 /**
  * A: 取込手順ガイド。職人さんが「公式ページを開いた後どうするか」で迷わないよう、
  * ブラウザで画像をコピー → アプリで Ctrl+V という最短ルートを明示する。
@@ -54,6 +67,8 @@ export interface ProductImportResult {
   spec: string;
   displayName: string;
   image: ImportedImage;
+  /** Phase 2-K2: 図面上の表示幅 (紙面 mm)。常に clampWidthMm 済みの値が入る。 */
+  widthMm: number;
 }
 
 interface Props {
@@ -65,6 +80,8 @@ interface Props {
   /** 保存して配置 (主アクション)。プリセット登録 + そのまま配置モードへ */
   readonly onSaveAndPlace: (result: ProductImportResult) => void;
   readonly onCancel: () => void;
+  /** Phase 2-K2: 図面の縮尺が校正済みか (プレビューの補足バッジ用)。 */
+  readonly scaleConfigured?: boolean;
 }
 
 const MAKER_OPTIONS = ['Panasonic', '大光電機 (DAIKO)', 'コイズミ', '遠藤照明', 'オーデリック', 'その他'];
@@ -75,6 +92,7 @@ export function ProductImportDialog({
   onSavePreset,
   onSaveAndPlace,
   onCancel,
+  scaleConfigured = false,
 }: Props): JSX.Element | null {
   const [maker, setMaker] = useState('Panasonic');
   const [partNumber, setPartNumber] = useState('');
@@ -83,6 +101,14 @@ export function ProductImportDialog({
   const [image, setImage] = useState<ImportedImage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  // E: 図面上の表示幅 (紙面 mm)
+  const [widthMm, setWidthMm] = useState(PRODUCT_IMAGE_DEFAULT_WIDTH_MM);
+
+  // プレビューは canvas/zoom 非依存。描画設定の倍率だけ反映して、実際の図面での
+  // 相対的な大小を正しく見せる (globalSizeScale × typeScales['product-image'])。
+  const globalSizeScale = useRenderSettingsStore((s) => s.globalSizeScale);
+  const typeScales = useRenderSettingsStore((s) => s.typeScales);
+  const previewScaleFactor = globalSizeScale * (typeScales['product-image'] ?? 1);
 
   // open のたびに初期化
   useEffect(() => {
@@ -94,6 +120,7 @@ export function ProductImportDialog({
       setImage(null);
       setError(null);
       setDragOver(false);
+      setWidthMm(PRODUCT_IMAGE_DEFAULT_WIDTH_MM);
     }
   }, [open]);
 
@@ -131,6 +158,15 @@ export function ProductImportDialog({
     displayName.trim() || [maker, partNumber].filter((s) => s.trim()).join(' ').trim();
   const canSubmit = image !== null && effectiveName !== '';
 
+  // E: プレビュー用の寸法計算 (canvas/zoom 非依存の固定倍率)
+  const clampedWidth = clampWidthMm(widthMm);
+  const previewPx = image
+    ? computeProductPreviewPx(clampedWidth, image.aspectRatio, previewScaleFactor)
+    : { wPx: 0, hPx: 0 };
+  const scaleBarPx = PREVIEW_SCALE_BAR_MM * PRODUCT_PREVIEW_PX_PER_MM * previewScaleFactor;
+  const previewHeightMm =
+    image && image.aspectRatio > 0 ? clampedWidth / image.aspectRatio : 0;
+
   const buildResult = (): ProductImportResult | null => {
     if (!image || effectiveName === '') return null;
     return {
@@ -139,6 +175,7 @@ export function ProductImportDialog({
       spec: spec.trim(),
       displayName: effectiveName,
       image,
+      widthMm: clampWidthMm(widthMm),
     };
   };
 
@@ -322,6 +359,70 @@ export function ProductImportDialog({
                 {' '}(縦横比 {image.aspectRatio.toFixed(2)})
               </p>
             )}
+
+            {/* E: 図面上の表示幅 設定 + 実寸プレビュー */}
+            {image && (
+              <div style={sizeSectionStyle}>
+                <label style={labelStyle}>図面上の表示幅</label>
+                <div style={sizePresetRowStyle}>
+                  {SIZE_PRESETS.map((p) => (
+                    <button
+                      type="button"
+                      key={p.label}
+                      onClick={() => setWidthMm(p.widthMm)}
+                      style={{
+                        ...sizePresetBtnStyle,
+                        ...(Math.round(clampedWidth) === p.widthMm ? sizePresetBtnActiveStyle : {}),
+                      }}
+                      title={`図面上の表示幅 ${p.widthMm}mm`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={sizeSliderRowStyle}>
+                  <input
+                    type="range"
+                    aria-label="表示幅スライダー"
+                    min={SIZE_WIDTH_MIN}
+                    max={SIZE_WIDTH_MAX}
+                    step={1}
+                    value={Math.round(clampedWidth)}
+                    onChange={(e) => setWidthMm(Number(e.target.value))}
+                    style={sizeRangeStyle}
+                  />
+                  <input
+                    type="number"
+                    aria-label="表示幅 (mm)"
+                    min={SIZE_WIDTH_MIN}
+                    max={SIZE_WIDTH_MAX}
+                    value={Math.round(clampedWidth)}
+                    onChange={(e) => setWidthMm(clampWidthMm(Number(e.target.value)))}
+                    style={sizeNumberStyle}
+                  />
+                  <span style={sizeUnitStyle}>mm</span>
+                </div>
+                <div style={scalePreviewBoxStyle}>
+                  <img
+                    src={image.dataUrl}
+                    alt="サイズプレビュー"
+                    style={{ width: previewPx.wPx, height: previewPx.hPx, display: 'block' }}
+                  />
+                </div>
+                <div style={scaleBarRowStyle}>
+                  <span style={{ ...scaleBarStyle, width: scaleBarPx }} />
+                  <span style={scaleBarLabelStyle}>{PREVIEW_SCALE_BAR_MM}mm</span>
+                </div>
+                <p style={sizeNoteStyle}>
+                  幅 約 {Math.round(clampedWidth)}mm / 高さ 約 {Math.round(previewHeightMm)}mm
+                </p>
+                {!scaleConfigured && (
+                  <p style={scaleBadgeStyle}>
+                    ※図面の縮尺は未設定です。記号との大小は正確に表示されます。
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -497,6 +598,83 @@ const fileLinkStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 const sizeHintStyle: React.CSSProperties = { fontSize: '0.72rem', color: '#888' };
+const sizeSectionStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 5,
+  marginTop: 6,
+  paddingTop: 8,
+  borderTop: '1px solid #eee',
+};
+const sizePresetRowStyle: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 4,
+};
+const sizePresetBtnStyle: React.CSSProperties = {
+  fontSize: '0.68rem',
+  padding: '3px 6px',
+  border: '1px solid #ccc',
+  borderRadius: 3,
+  background: '#fff',
+  color: '#444',
+  cursor: 'pointer',
+};
+const sizePresetBtnActiveStyle: React.CSSProperties = {
+  borderColor: '#0080ff',
+  background: '#eef6ff',
+  color: '#0066cc',
+  fontWeight: 'bold',
+};
+const sizeSliderRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+};
+const sizeRangeStyle: React.CSSProperties = { flex: 1, minWidth: 0 };
+const sizeNumberStyle: React.CSSProperties = {
+  width: 52,
+  fontSize: '0.8rem',
+  padding: '3px 4px',
+  border: '1px solid #ccc',
+  borderRadius: 3,
+};
+const sizeUnitStyle: React.CSSProperties = { fontSize: '0.72rem', color: '#888' };
+const scalePreviewBoxStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-end',
+  justifyContent: 'flex-start',
+  minHeight: 48,
+  maxHeight: 160,
+  padding: 6,
+  border: '1px solid #eee',
+  borderRadius: 4,
+  background:
+    'repeating-conic-gradient(#f3f3f3 0% 25%, #fff 0% 50%) 50% / 14px 14px',
+  overflow: 'hidden',
+};
+const scaleBarRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+};
+const scaleBarStyle: React.CSSProperties = {
+  height: 6,
+  borderLeft: '1px solid #555',
+  borderRight: '1px solid #555',
+  borderBottom: '1px solid #555',
+  flexShrink: 0,
+};
+const scaleBarLabelStyle: React.CSSProperties = { fontSize: '0.68rem', color: '#666' };
+const sizeNoteStyle: React.CSSProperties = { fontSize: '0.7rem', color: '#666', margin: 0 };
+const scaleBadgeStyle: React.CSSProperties = {
+  fontSize: '0.68rem',
+  color: '#8a6d00',
+  background: '#fff8e0',
+  padding: '3px 6px',
+  borderRadius: 3,
+  margin: 0,
+};
 const errorStyle: React.CSSProperties = { color: '#c00', fontSize: '0.85rem', margin: '8px 0' };
 const noticeStyle: React.CSSProperties = {
   fontSize: '0.75rem',

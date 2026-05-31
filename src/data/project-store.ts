@@ -30,8 +30,9 @@ export interface PlacePresetInfo {
   defaultProperties: Record<string, PropertyValue>;
   textOverride?: string;
   scaleOverride?: number;
-  /** Phase 2-I: 商品画像プリセットの画像 (配置時に widthMm 既定値で ProjectSymbol.image へ展開) */
-  image?: { dataUrl: string; aspectRatio: number };
+  /** Phase 2-I: 商品画像プリセットの画像 (配置時に ProjectSymbol.image へ展開)。
+   *  Phase 2-K2: widthMm があればその表示幅を使う (無ければ既定値)。 */
+  image?: { dataUrl: string; aspectRatio: number; widthMm?: number };
 }
 
 /** 操作モード。配置モード時は symbolType、スケール設定中は firstPointPx、配線モードは fromSymbolId と waypoints を保持する。 */
