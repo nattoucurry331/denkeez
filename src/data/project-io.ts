@@ -112,6 +112,10 @@ function buildProject(
   if (parsed.grid !== undefined) {
     result.grid = parsed.grid;
   }
+  // Phase 3 F-16 Sub-3: dimensions (v2 以前は欠落 → 設定しない = store 側で [] 扱い)
+  if (parsed.dimensions !== undefined) {
+    result.dimensions = parsed.dimensions.map((d) => canonicalizeDimension(d, fallbackLayerId));
+  }
   return result;
 }
 
@@ -131,6 +135,18 @@ function canonicalizeSymbol(s: ParsedSymbol, fallbackLayerId: string): ProjectSy
   if (s.text !== undefined) result.text = s.text;
   if (s.image !== undefined) result.image = s.image;
   return result;
+}
+
+function canonicalizeDimension(
+  d: NonNullable<ParsedProject['dimensions']>[number],
+  fallbackLayerId: string,
+): import('./types').Dimension {
+  return {
+    id: d.id,
+    from: d.from,
+    to: d.to,
+    layerId: d.layerId ?? fallbackLayerId,
+  };
 }
 
 function canonicalizeWire(w: ParsedWire, fallbackLayerId: string): Wire {

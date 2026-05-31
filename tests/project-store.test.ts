@@ -11,6 +11,46 @@ function flushDebounce(): Promise<void> {
 // Plan §5 R-11: dirty フラグ管理の漏れを単体テストで網羅する。
 // すべての mutation で dirty=true 化されるかを検証。
 
+describe('project-store dimension CRUD (F-16 Sub-3)', () => {
+  beforeEach(() => {
+    useProjectStore.getState().newProject();
+  });
+
+  it('addDimension は寸法を追加し dirty にする', () => {
+    useProjectStore.getState().addDimension({ x: 0, y: 0 }, { x: 1000, y: 0 });
+    const dims = useProjectStore.getState().project.dimensions ?? [];
+    expect(dims).toHaveLength(1);
+    expect(dims[0]?.from).toEqual({ x: 0, y: 0 });
+    expect(dims[0]?.to).toEqual({ x: 1000, y: 0 });
+    expect(dims[0]?.layerId).toBeTruthy();
+    expect(isDirty()).toBe(true);
+  });
+
+  it('updateDimensionPoints は端点を更新する', () => {
+    useProjectStore.getState().addDimension({ x: 0, y: 0 }, { x: 10, y: 0 });
+    const id = useProjectStore.getState().project.dimensions![0]!.id;
+    useProjectStore.getState().updateDimensionPoints(id, { x: 5, y: 5 }, { x: 20, y: 5 });
+    const d = useProjectStore.getState().project.dimensions![0]!;
+    expect(d.from).toEqual({ x: 5, y: 5 });
+    expect(d.to).toEqual({ x: 20, y: 5 });
+  });
+
+  it('removeDimensions は指定 id を削除し選択からも外す', () => {
+    const store = useProjectStore.getState();
+    store.addDimension({ x: 0, y: 0 }, { x: 10, y: 0 });
+    const id = useProjectStore.getState().project.dimensions![0]!.id;
+    store.selectSymbols([id]);
+    store.removeDimensions([id]);
+    expect(useProjectStore.getState().project.dimensions).toHaveLength(0);
+    expect(useProjectStore.getState().selectedIds).not.toContain(id);
+  });
+
+  it('enterDimensionMode で寸法線モードに入る', () => {
+    useProjectStore.getState().enterDimensionMode();
+    expect(useProjectStore.getState().mode.kind).toBe('dimension');
+  });
+});
+
 describe('project-store symbol CRUD', () => {
   beforeEach(() => {
     useProjectStore.getState().newProject();

@@ -118,6 +118,33 @@ describe('serializeProject / deserializeProject 往復', () => {
     };
     expect(() => deserializeProject(JSON.stringify(obj))).toThrow(ProjectFileError);
   });
+
+  // Phase 3 F-16 Sub-3: 寸法注記 (dimensions) の往復・マイグレーション
+  it('dimensions を往復で保持する', () => {
+    const project = makeProject({
+      dimensions: [
+        { id: 'd-1', from: { x: 0, y: 0 }, to: { x: 1000, y: 0 }, layerId: TEST_LAYER_ID },
+      ],
+    });
+    const restored = deserializeProject(serializeProject(project));
+    expect(restored.dimensions).toEqual(project.dimensions);
+  });
+
+  it('dimensions の layerId 欠落はフォールバックレイヤーで補う', () => {
+    const obj = JSON.parse(serializeProject(makeProject())) as Record<string, unknown>;
+    obj.dimensions = [{ id: 'd-x', from: { x: 0, y: 0 }, to: { x: 10, y: 10 } }];
+    const restored = deserializeProject(JSON.stringify(obj));
+    expect(restored.dimensions?.[0]?.layerId).toBe(TEST_LAYER_ID);
+  });
+
+  it('v2 ファイル (dimensions 欠落) は schemaVersion 3 に上がり dimensions は未設定', () => {
+    const obj = JSON.parse(serializeProject(makeProject())) as Record<string, unknown>;
+    (obj.meta as Record<string, unknown>).schemaVersion = 2;
+    delete obj.dimensions;
+    const restored = deserializeProject(JSON.stringify(obj));
+    expect(restored.meta.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(restored.dimensions).toBeUndefined();
+  });
 });
 
 describe('deserializeProject エラー処理', () => {
