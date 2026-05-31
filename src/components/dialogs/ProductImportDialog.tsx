@@ -9,8 +9,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  importImageFile,
-  importImageFromClipboard,
+  fileToDataUrl,
+  clipboardToDataUrl,
+  downscaleDataUrl,
   formatBytes,
   type ImportedImage,
 } from '../../utils/image-import';
@@ -110,6 +111,9 @@ export function ProductImportDialog({
   const [image, setImage] = useState<ImportedImage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  // F: 取込元の生 dataURL を保持し、透過 ON/OFF を元画像から処理し直す (高品質)
+  const [srcDataUrl, setSrcDataUrl] = useState<string | null>(null);
+  const [transparentBg, setTransparentBg] = useState(false);
   // E: 図面上の表示幅 (紙面 mm)
   const [widthMm, setWidthMm] = useState(PRODUCT_IMAGE_DEFAULT_WIDTH_MM);
   // G: 重複確認の保留状態 (既存プリセットと同一メーカー+品番のとき)
@@ -136,14 +140,17 @@ export function ProductImportDialog({
       setDragOver(false);
       setWidthMm(PRODUCT_IMAGE_DEFAULT_WIDTH_MM);
       setPendingSave(null);
+      setSrcDataUrl(null);
+      setTransparentBg(false);
     }
   }, [open]);
 
+  // 取込元 (file) を生 dataURL として保持。実際の縮小/透過は下の effect で行う。
   const handleFile = useCallback(async (file: File) => {
     setError(null);
     try {
-      const img = await importImageFile(file, { maxEdge: 512, quality: 0.82 });
-      setImage(img);
+      const src = await fileToDataUrl(file);
+      setSrcDataUrl(src);
     } catch (e) {
       setError(e instanceof Error ? e.message : '画像の取込に失敗しました');
     }
@@ -153,14 +160,11 @@ export function ProductImportDialog({
   useEffect(() => {
     if (!open) return;
     const onPaste = (e: ClipboardEvent): void => {
-      void importImageFromClipboard(e.clipboardData?.items ?? null, {
-        maxEdge: 512,
-        quality: 0.82,
-      })
-        .then((img) => {
-          if (img) {
+      void clipboardToDataUrl(e.clipboardData?.items ?? null)
+        .then((src) => {
+          if (src) {
             setError(null);
-            setImage(img);
+            setSrcDataUrl(src);
           }
         })
         .catch(() => setError('クリップボードからの取込に失敗しました'));
@@ -168,6 +172,26 @@ export function ProductImportDialog({
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
   }, [open]);
+
+  // F: 取込元 or 透過設定が変わったら、元画像から縮小/透過し直して image を更新する。
+  useEffect(() => {
+    if (!open || !srcDataUrl) return;
+    let cancelled = false;
+    void downscaleDataUrl(srcDataUrl, {
+      maxEdge: 512,
+      quality: 0.82,
+      removeWhiteBg: transparentBg,
+    })
+      .then((img) => {
+        if (!cancelled) setImage(img);
+      })
+      .catch(() => {
+        if (!cancelled) setError('画像の処理に失敗しました');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, srcDataUrl, transparentBg]);
 
   const effectiveName =
     displayName.trim() || [maker, partNumber].filter((s) => s.trim()).join(' ').trim();
@@ -345,6 +369,7 @@ export function ProductImportDialog({
             <div
               style={{
                 ...dropZoneStyle,
+                ...(image && transparentBg ? checkerBgStyle : {}),
                 ...(dragOver ? dropZoneActiveStyle : {}),
               }}
               onDragOver={(e) => {
@@ -385,6 +410,23 @@ export function ProductImportDialog({
               <p style={sizeHintStyle}>
                 取込サイズ: 約 {formatBytes(image.approxBytes)}
                 {' '}(縦横比 {image.aspectRatio.toFixed(2)})
+              </p>
+            )}
+
+            {/* F: 白背景の透明化トグル */}
+            {image && (
+              <label style={transparentToggleStyle}>
+                <input
+                  type="checkbox"
+                  checked={transparentBg}
+                  onChange={(e) => setTransparentBg(e.target.checked)}
+                />
+                <span>白い背景を透明にする</span>
+              </label>
+            )}
+            {image && transparentBg && (
+              <p style={transparentNoteStyle}>
+                ※透明化すると PNG 形式になり、ファイルがやや大きくなります。
               </p>
             )}
 
@@ -661,6 +703,23 @@ const fileLinkStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 const sizeHintStyle: React.CSSProperties = { fontSize: '0.72rem', color: '#888' };
+const transparentToggleStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  fontSize: '0.78rem',
+  color: '#444',
+  cursor: 'pointer',
+};
+const transparentNoteStyle: React.CSSProperties = {
+  fontSize: '0.68rem',
+  color: '#888',
+  margin: 0,
+};
+const checkerBgStyle: React.CSSProperties = {
+  background:
+    'repeating-conic-gradient(#e8e8e8 0% 25%, #fff 0% 50%) 50% / 16px 16px',
+};
 const sizeSectionStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
