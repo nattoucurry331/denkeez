@@ -137,24 +137,45 @@ export function MenuBar(): JSX.Element {
     setPdfDialogOpen(true);
   };
 
+  // PDF バイト列を生成 (保存・プレビューで共用)
+  const buildPdfBytes = (settings: PdfExportSettings): Uint8Array => {
+    if (!pdfCanvas || !project.drawing) {
+      throw new Error('PDF 背景が読み込まれていません');
+    }
+    return exportProjectAsPdf({
+      project,
+      backgroundCanvas: pdfCanvas,
+      layerIds: settings.layerIds,
+      paperSize: settings.paperSize,
+      orientation: settings.orientation,
+      symbolTransparent,
+      globalSizeScale,
+      typeScales,
+    });
+  };
+
+  // Phase 3 F-14d: 出力前プレビュー。PDF を blob URL 化して返す (ダイアログが iframe 表示)。
+  const handlePreviewPdf = async (settings: PdfExportSettings): Promise<string | null> => {
+    try {
+      const bytes = buildPdfBytes(settings);
+      const ab = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer;
+      const blob = new Blob([ab], { type: 'application/pdf' });
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'プレビューの生成に失敗しました');
+      return null;
+    }
+  };
+
   const handleConfirmPdfExport = (settings: PdfExportSettings): Promise<void> =>
     wrap(async () => {
       setPdfDialogOpen(false);
-      if (!pdfCanvas || !project.drawing) {
-        throw new Error('PDF 背景が読み込まれていません');
-      }
       const path = await selectPdfFileToSave(suggestedExportName(project));
       if (!path) return;
-      const bytes = exportProjectAsPdf({
-        project,
-        backgroundCanvas: pdfCanvas,
-        layerIds: settings.layerIds,
-        paperSize: settings.paperSize,
-        orientation: settings.orientation,
-        symbolTransparent,
-        globalSizeScale,
-        typeScales,
-      });
+      const bytes = buildPdfBytes(settings);
       await writeBinaryFile(path, bytes);
       setInfo(`PDF を出力しました: ${basename(path)}`);
     });
@@ -406,6 +427,7 @@ export function MenuBar(): JSX.Element {
           onConfirm={(settings) => {
             void handleConfirmPdfExport(settings);
           }}
+          onPreview={handlePreviewPdf}
           onCancel={() => setPdfDialogOpen(false)}
         />
       )}
