@@ -22,6 +22,11 @@ import {
   type SelectionRect,
 } from '../../canvas/selection-rect-layer';
 import { ScaleOverlayLayer } from '../../canvas/scale-overlay-layer';
+import {
+  MeasureOverlayLayer,
+  type MeasureSegment,
+} from '../../canvas/measure-overlay-layer';
+import { formatDistanceMm } from '../../utils/dimension-format';
 import { WireLayer } from '../../canvas/wire-layer';
 import { WirePreviewLayer } from '../../canvas/wire-preview-layer';
 import { ScaleInputDialog } from '../dialogs/ScaleInputDialog';
@@ -64,6 +69,7 @@ export function CanvasArea(): JSX.Element {
   const setScaleFirstPoint = useProjectStore((s) => s.setScaleFirstPoint);
   const setScale = useProjectStore((s) => s.setScale);
   const enterScaleMode = useProjectStore((s) => s.enterScaleMode);
+  const setMeasureFirstPoint = useProjectStore((s) => s.setMeasureFirstPoint);
   const setWireFromSymbol = useProjectStore((s) => s.setWireFromSymbol);
   const appendWireWaypoint = useProjectStore((s) => s.appendWireWaypoint);
   const addWire = useProjectStore((s) => s.addWire);
@@ -92,6 +98,9 @@ export function CanvasArea(): JSX.Element {
   });
   // 配線モード用カーソル位置 (canvas 論理座標)
   const [wireCursorPx, setWireCursorPx] = useState<{ x: number; y: number } | null>(null);
+  // Phase 3 F-16 Sub-1: 寸法計測モード用カーソル位置 + 直前の計測結果 (消える計測)
+  const [measureCursorPx, setMeasureCursorPx] = useState<{ x: number; y: number } | null>(null);
+  const [lastMeasurement, setLastMeasurement] = useState<MeasureSegment | null>(null);
   // Phase 2-J2: スケール未設定バナーを閉じたか (セッション内)
   const [scaleBannerDismissed, setScaleBannerDismissed] = useState(false);
 
@@ -106,6 +115,14 @@ export function CanvasArea(): JSX.Element {
     setContainerSize({ w: el.clientWidth, h: el.clientHeight });
     return () => ro.disconnect();
   }, [drawing]);
+
+  // Phase 3 F-16: 計測モードを抜けたら計測表示をクリア (消える計測)
+  useEffect(() => {
+    if (mode.kind !== 'measure') {
+      setLastMeasurement(null);
+      setMeasureCursorPx(null);
+    }
+  }, [mode.kind]);
 
   const fittedCanvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
@@ -136,6 +153,10 @@ export function CanvasArea(): JSX.Element {
         } else if (mode.kind === 'place' || mode.kind === 'scale') {
           exitMode();
           setScaleCursorPx(null);
+        } else if (mode.kind === 'measure') {
+          exitMode();
+          setMeasureCursorPx(null);
+          setLastMeasurement(null);
         } else {
           clearSelection();
         }
@@ -213,6 +234,14 @@ export function CanvasArea(): JSX.Element {
           スケール設定中: {mode.firstPointPx ? '2 点目をクリック' : '1 点目をクリック'} (ESC で解除)
         </span>
       )}
+      {mode.kind === 'measure' && (
+        <span style={measureModeBadgeStyle}>
+          寸法計測中: {mode.firstPointPx ? '2 点目をクリック' : '1 点目をクリック'}
+          {!drawing.scale && ' ／ 縮尺未設定のため「紙面寸法」です'}
+          {lastMeasurement && ` ／ 直前: ${lastMeasurement.label}`}
+          {' '}(ESC で解除)
+        </span>
+      )}
       {mode.kind === 'wire' && (
         <span style={wireModeBadgeStyle}>
           配線モード: {!mode.fromSymbolId ? '始点シンボルをクリック' : '中継点クリック / 終点シンボルをクリック'} (ESC で途中解除)
@@ -280,6 +309,9 @@ export function CanvasArea(): JSX.Element {
     if (mode.kind === 'scale') {
       setScaleCursorPx(point);
     }
+    if (mode.kind === 'measure') {
+      setMeasureCursorPx(point);
+    }
     if (mode.kind === 'wire') {
       setWireCursorPx(point);
     }
@@ -328,6 +360,7 @@ export function CanvasArea(): JSX.Element {
   const handleStageMouseLeave = () => {
     setCursorMm(null);
     setScaleCursorPx(null);
+    setMeasureCursorPx(null);
     selectionStartRef.current = null;
     setSelectionRect(null);
     viewportControls.onMouseUp({} as KonvaEventObject<MouseEvent>);
@@ -350,6 +383,28 @@ export function CanvasArea(): JSX.Element {
           return;
         }
         setScaleDialog({ open: true, pixelDistance: distance });
+      }
+      return;
+    }
+
+    if (mode.kind === 'measure') {
+      if (!mode.firstPointPx) {
+        // 新しい計測の開始: 直前の結果を消して 1 点目を置く
+        setLastMeasurement(null);
+        setMeasureFirstPoint(point);
+      } else {
+        const distance = distancePx(mode.firstPointPx, point);
+        if (distance < 1) return;
+        // px → mm 変換は scaleObj (校正済みなら実寸、未校正は紙面 mm)
+        const mm = distance / pxPerMm;
+        const calibrated = !!drawing.scale;
+        setLastMeasurement({
+          fromPx: mode.firstPointPx,
+          toPx: point,
+          label: formatDistanceMm(mm, calibrated),
+        });
+        // 2 点目確定 → 次の計測に備えて 1 点目をクリア (結果は凍結表示が残る)
+        setMeasureFirstPoint(undefined);
       }
       return;
     }
@@ -436,9 +491,18 @@ export function CanvasArea(): JSX.Element {
       ? viewportControls.isPanning()
         ? 'grabbing'
         : 'grab'
-      : mode.kind === 'place' || mode.kind === 'scale' || mode.kind === 'wire'
+      : mode.kind === 'place' ||
+          mode.kind === 'scale' ||
+          mode.kind === 'measure' ||
+          mode.kind === 'wire'
         ? 'crosshair'
         : 'default';
+
+  // Phase 3 F-16: 進行中(1点目→カーソル)のライブ距離ラベル
+  const measureLiveLabel =
+    mode.kind === 'measure' && mode.firstPointPx && measureCursorPx
+      ? formatDistanceMm(distancePx(mode.firstPointPx, measureCursorPx) / pxPerMm, !!drawing.scale)
+      : undefined;
 
   // Phase 2-J2: スケール未設定なら「まず縮尺を合わせましょう」を案内 (select モード時のみ)
   const showScaleBanner =
@@ -508,6 +572,14 @@ export function CanvasArea(): JSX.Element {
             active={mode.kind === 'scale'}
             firstPointPx={mode.kind === 'scale' ? mode.firstPointPx : undefined}
             cursorPx={mode.kind === 'scale' ? scaleCursorPx ?? undefined : undefined}
+          />
+          <MeasureOverlayLayer
+            active={mode.kind === 'measure'}
+            firstPointPx={mode.kind === 'measure' ? mode.firstPointPx : undefined}
+            cursorPx={mode.kind === 'measure' ? measureCursorPx ?? undefined : undefined}
+            liveLabel={measureLiveLabel}
+            lastMeasurement={mode.kind === 'measure' ? lastMeasurement ?? undefined : undefined}
+            viewportScale={viewportScale}
           />
         </Stage>
       </div>
@@ -586,6 +658,10 @@ const scaleModeBadgeStyle: React.CSSProperties = {
 const wireModeBadgeStyle: React.CSSProperties = {
   ...modeBadgeStyle,
   background: '#ff5500',
+};
+const measureModeBadgeStyle: React.CSSProperties = {
+  ...modeBadgeStyle,
+  background: '#d35400',
 };
 const stageContainerStyle: React.CSSProperties = {
   flex: 1,
