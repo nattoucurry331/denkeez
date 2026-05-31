@@ -167,9 +167,11 @@ export interface SymbolPreset {
   scaleOverride?: number;
   /**
    * Phase 2-I: 商品画像プリセットの画像 (baseType === 'product-image' のとき)。
-   * 配置時に ProjectSymbol.image へ展開される (widthMm は配置側の既定値を使う)。
+   * 配置時に ProjectSymbol.image へ展開される。
+   * Phase 2-K2: widthMm を保持していれば配置時にその表示幅を使う
+   *   (未保持なら配置側の既定値 PRODUCT_IMAGE_DEFAULT_WIDTH_MM)。
    */
-  image?: { dataUrl: string; aspectRatio: number };
+  image?: { dataUrl: string; aspectRatio: number; widthMm?: number };
 }
 
 /** Phase 2-A2 / 2-C 拡張: グリッド表示設定 (Project に永続化) */

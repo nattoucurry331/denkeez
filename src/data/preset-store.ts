@@ -45,6 +45,10 @@ function readInitial(): SymbolPreset[] {
         preset.image = {
           dataUrl: im.dataUrl as string,
           aspectRatio: im.aspectRatio as number,
+          // Phase 2-K2: 表示幅を保持していれば引き継ぐ (正の数のみ)
+          ...(typeof im.widthMm === 'number' && Number.isFinite(im.widthMm) && im.widthMm > 0
+            ? { widthMm: im.widthMm }
+            : {}),
         };
       }
       out.push(preset);

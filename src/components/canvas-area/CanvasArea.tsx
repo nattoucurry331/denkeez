@@ -33,7 +33,7 @@ import {
   lockedLayerIds,
 } from '../../data/layer-helpers';
 import { BACKGROUND_LAYER_ID } from '../../data/types';
-import { PRODUCT_IMAGE_DEFAULT_WIDTH_MM } from '../dialogs/ProductImportDialog';
+import { PRODUCT_IMAGE_DEFAULT_WIDTH_MM } from '../../utils/product-size';
 import { WelcomeScreen } from './WelcomeScreen';
 
 /** Konva の Node 階層を遡って `sym-XXX` の id を持つ祖先 (= シンボル Group) を探す */
@@ -398,12 +398,13 @@ export function CanvasArea(): JSX.Element {
         opts.properties = mode.preset.defaultProperties;
         if (mode.preset.textOverride !== undefined) opts.text = mode.preset.textOverride;
         if (mode.preset.scaleOverride !== undefined) opts.scale = mode.preset.scaleOverride;
-        // Phase 2-I: 商品画像プリセットは widthMm 既定値を補って SymbolImage に展開
+        // Phase 2-I/2-K2: 商品画像プリセット。preset が表示幅を持てばそれを使い、
+        // 無ければ既定値で SymbolImage に展開する。
         if (mode.preset.image !== undefined) {
           opts.image = {
             dataUrl: mode.preset.image.dataUrl,
             aspectRatio: mode.preset.image.aspectRatio,
-            widthMm: PRODUCT_IMAGE_DEFAULT_WIDTH_MM,
+            widthMm: mode.preset.image.widthMm ?? PRODUCT_IMAGE_DEFAULT_WIDTH_MM,
           };
         }
       }
