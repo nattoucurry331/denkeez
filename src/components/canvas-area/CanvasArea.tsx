@@ -13,7 +13,6 @@ import { useProjectStore } from '../../data/project-store';
 import { useViewportStore } from '../../data/viewport-store';
 import type { SymbolType } from '../../data/types';
 import { useViewportControls } from '../../canvas/viewport-controls';
-import { askConfirm } from '../../tauri/api';
 import { SymbolsLayer } from '../../canvas/symbols-layer';
 import { GridLayer } from '../../canvas/grid-layer';
 import { Minimap } from '../../canvas/minimap';
@@ -28,16 +27,17 @@ import {
 } from '../../canvas/measure-overlay-layer';
 import { formatDistanceMm } from '../../utils/dimension-format';
 import { DimensionLayer } from '../../canvas/dimension-layer';
+import { TextAnnotationLayer } from '../../canvas/text-annotation-layer';
+import { PdfTextLayer } from '../../canvas/pdf-text-layer';
 import { WireLayer } from '../../canvas/wire-layer';
 import { WirePreviewLayer } from '../../canvas/wire-preview-layer';
 import { ScaleInputDialog } from '../dialogs/ScaleInputDialog';
+import { TextEditOverlay, type TextEditTarget } from './TextEditOverlay';
 import { useKeyboardShortcuts } from '../../hooks/use-keyboard-shortcuts';
-import { pxToMm, computePxPerMm, distancePx } from '../../utils/coordinate';
+import { deleteSelection } from '../../hooks/delete-selection';
+import { pxToMm, mmToPx, computePxPerMm, distancePx } from '../../utils/coordinate';
 import { getSymbolDefinition } from '../../symbols/symbol-registry';
-import {
-  filterEditableEntityIds,
-  lockedLayerIds,
-} from '../../data/layer-helpers';
+import { lockedLayerIds } from '../../data/layer-helpers';
 import { BACKGROUND_LAYER_ID } from '../../data/types';
 import { PRODUCT_IMAGE_DEFAULT_WIDTH_MM } from '../../utils/product-size';
 import { WelcomeScreen } from './WelcomeScreen';
@@ -63,7 +63,6 @@ export function CanvasArea(): JSX.Element {
   const selectedIds = useProjectStore((s) => s.selectedIds);
   const mode = useProjectStore((s) => s.mode);
   const addSymbol = useProjectStore((s) => s.addSymbol);
-  const removeSymbols = useProjectStore((s) => s.removeSymbols);
   const exitMode = useProjectStore((s) => s.exitMode);
   const clearSelection = useProjectStore((s) => s.clearSelection);
   const selectSymbols = useProjectStore((s) => s.selectSymbols);
@@ -73,7 +72,10 @@ export function CanvasArea(): JSX.Element {
   const setMeasureFirstPoint = useProjectStore((s) => s.setMeasureFirstPoint);
   const setDimensionFirstPoint = useProjectStore((s) => s.setDimensionFirstPoint);
   const addDimension = useProjectStore((s) => s.addDimension);
-  const removeDimensions = useProjectStore((s) => s.removeDimensions);
+  const textAnnotations = useProjectStore((s) => s.project.textAnnotations);
+  const addTextAnnotation = useProjectStore((s) => s.addTextAnnotation);
+  const updateTextAnnotation = useProjectStore((s) => s.updateTextAnnotation);
+  const removeTextAnnotations = useProjectStore((s) => s.removeTextAnnotations);
   const setWireFromSymbol = useProjectStore((s) => s.setWireFromSymbol);
   const appendWireWaypoint = useProjectStore((s) => s.appendWireWaypoint);
   const addWire = useProjectStore((s) => s.addWire);
@@ -107,6 +109,8 @@ export function CanvasArea(): JSX.Element {
   const [lastMeasurement, setLastMeasurement] = useState<MeasureSegment | null>(null);
   // Phase 2-J2: スケール未設定バナーを閉じたか (セッション内)
   const [scaleBannerDismissed, setScaleBannerDismissed] = useState(false);
+  // F-18: 編集中のテキスト注記 ID (HTML オーバーレイ表示中)
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!drawing) return;
@@ -164,65 +168,21 @@ export function CanvasArea(): JSX.Element {
         } else if (mode.kind === 'dimension') {
           exitMode();
           setMeasureCursorPx(null);
+        } else if (mode.kind === 'text') {
+          exitMode();
         } else {
           clearSelection();
         }
       } else if (e.key === 'Delete' && selectedIds.length > 0) {
-        // Phase 2-C4: 参照する Wire があれば確認してから削除
-        // Phase 2-D3: ロック中レイヤー所属の id は削除対象から除外。
-        //   selectedIds には symbol/wire の両方が混在し得るので、
-        //   それぞれの editable な部分集合を計算して removeSymbols / removeWires を呼ぶ。
-        void (async () => {
-          const state = useProjectStore.getState();
-          const allWires = state.project.wires ?? [];
-          const editable = filterEditableEntityIds(
-            selectedIds,
-            state.project.symbols,
-            allWires,
-            state.project.layers,
-          );
-          if (editable.length === 0) return;
-          const editableSet = new Set(editable);
-          const symbolIds = state.project.symbols
-            .filter((s) => editableSet.has(s.id))
-            .map((s) => s.id);
-          const directWireIds = allWires
-            .filter((w) => editableSet.has(w.id))
-            .map((w) => w.id);
-          // シンボル削除で連鎖削除される wire (端点参照)
-          const symbolIdSet = new Set(symbolIds);
-          const cascadingWires = allWires.filter(
-            (w) =>
-              !directWireIds.includes(w.id) &&
-              (symbolIdSet.has(w.fromSymbolId) || symbolIdSet.has(w.toSymbolId)),
-          );
-          if (cascadingWires.length > 0) {
-            const ok = await askConfirm(
-              `選択中のシンボルに接続された ${cascadingWires.length} 本の配線も一緒に削除されます。続行しますか?`,
-              'シンボル削除',
-            );
-            if (!ok) return;
-          }
-          if (directWireIds.length > 0) {
-            useProjectStore.getState().removeWires(directWireIds);
-          }
-          if (symbolIds.length > 0) {
-            removeSymbols(symbolIds);
-          }
-        })();
-        // Phase 3 F-16 Sub-3: 選択中の寸法注記を削除 (ロック中レイヤーは除外・連鎖なし)
-        const dims = useProjectStore.getState().project.dimensions ?? [];
-        const lockedSet = lockedLayerIds(useProjectStore.getState().project.layers);
-        const selSet = new Set(selectedIds);
-        const dimIds = dims
-          .filter((d) => selSet.has(d.id) && !lockedSet.has(d.layerId))
-          .map((d) => d.id);
-        if (dimIds.length > 0) removeDimensions(dimIds);
+        // 発見性改善 / F-18: 削除ロジックは deleteSelection に集約 (ツールバーの「削除」と共通)。
+        // symbol / wire / dimension / textAnnotation を横断し、ロック中レイヤーは除外、
+        // 配線の連鎖削除がある場合のみ確認ダイアログを出す。
+        void deleteSelection();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [mode, selectedIds, exitMode, clearSelection, removeSymbols, removeDimensions, resetWireProgress]);
+  }, [mode, selectedIds, exitMode, clearSelection, resetWireProgress]);
 
   useKeyboardShortcuts({
     getViewportCenter: () =>
@@ -267,6 +227,11 @@ export function CanvasArea(): JSX.Element {
       {mode.kind === 'wire' && (
         <span style={wireModeBadgeStyle}>
           配線モード: {!mode.fromSymbolId ? '始点シンボルをクリック' : '中継点クリック / 終点シンボルをクリック'} (ESC で途中解除)
+        </span>
+      )}
+      {mode.kind === 'text' && (
+        <span style={textModeBadgeStyle}>
+          文字モード: 図面上をクリックして文字を入力 (ESC で解除 / 既存はダブルクリックで編集)
         </span>
       )}
     </p>
@@ -475,6 +440,15 @@ export function CanvasArea(): JSX.Element {
       return;
     }
 
+    if (mode.kind === 'text') {
+      // F-18: クリック位置に空の注記を作成し、即オーバーレイ編集に入る
+      const positionMm = { x: pxToMm(point.x, scaleObj), y: pxToMm(point.y, scaleObj) };
+      const id = addTextAnnotation(positionMm);
+      selectSymbols([id]);
+      setEditingTextId(id);
+      return;
+    }
+
     if (mode.kind === 'place') {
       // Phase 2-H: preset 由来の properties / text / scale を addSymbol に渡す
       const positionMm = {
@@ -533,7 +507,8 @@ export function CanvasArea(): JSX.Element {
           mode.kind === 'scale' ||
           mode.kind === 'measure' ||
           mode.kind === 'dimension' ||
-          mode.kind === 'wire'
+          mode.kind === 'wire' ||
+          mode.kind === 'text'
         ? 'crosshair'
         : 'default';
 
@@ -548,6 +523,43 @@ export function CanvasArea(): JSX.Element {
   // Phase 2-J2: スケール未設定なら「まず縮尺を合わせましょう」を案内 (select モード時のみ)
   const showScaleBanner =
     !drawing.scale && !scaleBannerDismissed && mode.kind === 'select';
+
+  // F-18: 編集中テキスト注記のオーバーレイ位置 (Stage の scale/offset を反映したスクリーン座標)
+  const editingAnnotation = editingTextId
+    ? (textAnnotations ?? []).find((a) => a.id === editingTextId)
+    : undefined;
+  const editingTarget: TextEditTarget | null = editingAnnotation
+    ? {
+        leftPx: offsetX + mmToPx(editingAnnotation.position.x, scaleObj) * viewportScale,
+        topPx: offsetY + mmToPx(editingAnnotation.position.y, scaleObj) * viewportScale,
+        fontSizePx:
+          mmToPx(editingAnnotation.fontSizeMm, { pxPerMm: paperPxPerMm }) * viewportScale,
+        color: editingAnnotation.color,
+        text: editingAnnotation.text,
+      }
+    : null;
+
+  const commitTextEdit = (text: string): void => {
+    const id = editingTextId;
+    setEditingTextId(null);
+    if (!id) return;
+    if (text.trim() === '') {
+      removeTextAnnotations([id]); // 空は破棄
+    } else {
+      updateTextAnnotation(id, { text });
+    }
+  };
+
+  const cancelTextEdit = (): void => {
+    const id = editingTextId;
+    setEditingTextId(null);
+    if (!id) return;
+    // 取消時、保存済みが空 (新規作成直後) なら破棄
+    const a = (useProjectStore.getState().project.textAnnotations ?? []).find(
+      (t) => t.id === id,
+    );
+    if (a && a.text.trim() === '') removeTextAnnotations([id]);
+  };
 
   return (
     <div style={containerStyle}>
@@ -602,6 +614,8 @@ export function CanvasArea(): JSX.Element {
             </Layer>
           )}
           <GridLayer pxPerMm={pxPerMm} canvasWidth={canvas.width} canvasHeight={canvas.height} />
+          {/* F-18: PDF 抽出文字 (参照用・読み取り専用、背景の直上) */}
+          <PdfTextLayer pxPerMm={pxPerMm} paperPxPerMm={paperPxPerMm} />
           <WireLayer pxPerMm={pxPerMm} />
           <SymbolsLayer pxPerMm={pxPerMm} paperPxPerMm={paperPxPerMm} />
           <WirePreviewLayer
@@ -619,6 +633,16 @@ export function CanvasArea(): JSX.Element {
             calibrated={!!drawing.scale}
             viewportScale={viewportScale}
           />
+          {/* F-18: 自由テキスト注記 (選択・移動・編集可能) */}
+          <TextAnnotationLayer
+            pxPerMm={pxPerMm}
+            paperPxPerMm={paperPxPerMm}
+            editingId={editingTextId}
+            onRequestEdit={(id) => {
+              selectSymbols([id]);
+              setEditingTextId(id);
+            }}
+          />
           <MeasureOverlayLayer
             active={mode.kind === 'measure' || mode.kind === 'dimension'}
             firstPointPx={measureFirstPx}
@@ -632,6 +656,11 @@ export function CanvasArea(): JSX.Element {
             viewportScale={viewportScale}
           />
         </Stage>
+        <TextEditOverlay
+          target={editingTarget}
+          onCommit={commitTextEdit}
+          onCancel={cancelTextEdit}
+        />
       </div>
       <ScaleInputDialog
         open={scaleDialog.open}
@@ -712,6 +741,10 @@ const wireModeBadgeStyle: React.CSSProperties = {
 const measureModeBadgeStyle: React.CSSProperties = {
   ...modeBadgeStyle,
   background: '#d35400',
+};
+const textModeBadgeStyle: React.CSSProperties = {
+  ...modeBadgeStyle,
+  background: '#7048c0',
 };
 const stageContainerStyle: React.CSSProperties = {
   flex: 1,
