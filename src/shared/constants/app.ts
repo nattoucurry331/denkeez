@@ -16,4 +16,5 @@ export const APP_VERSION = '0.16.0';
 //  2: Phase 2-D1〜  (layers 必須、ProjectSymbol.layerId / Wire.layerId 必須)
 //                   旧 v1 ファイルは project-io.ts のマイグレーションで「未分類」レイヤーに自動割当。
 //  3: Phase 3 F-16 Sub-3 (Project.dimensions 追加)。v2 以前は dimensions 欠落 → [] 扱い。
-export const SCHEMA_VERSION = 3;
+//  4: F-18 (Project.textAnnotations / pdfTextItems 追加)。v3 以前は欠落 → 未設定 (= [] 扱い)。
+export const SCHEMA_VERSION = 4;

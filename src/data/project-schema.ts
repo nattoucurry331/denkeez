@@ -102,6 +102,26 @@ const DimensionSchema = z.object({
   layerId: z.string().min(1).optional(),
 });
 
+// F-18: テキスト注記 (schemaVersion 4)。layerId は後方互換のため optional とし
+// project-io.ts のマイグレーションで補う (dimension と同方針)。
+const TextAnnotationSchema = z.object({
+  id: z.string().min(1),
+  position: PointSchema,
+  text: z.string(),
+  fontSizeMm: z.number().positive().finite(),
+  color: z.string().min(1),
+  layerId: z.string().min(1).optional(),
+});
+
+// PDF 文字抽出 (schemaVersion 4)。layerId は後方互換のため optional。
+const PdfTextItemSchema = z.object({
+  id: z.string().min(1),
+  text: z.string(),
+  position: PointSchema,
+  fontSizeMm: z.number().positive().finite(),
+  layerId: z.string().min(1).optional(),
+});
+
 // Phase 3 F-14: 表題欄設定
 const TitleBlockSchema = z.object({
   enabled: z.boolean(),
@@ -135,6 +155,9 @@ export const ProjectSchema = z.object({
   grid: ProjectGridConfigSchema.optional(),
   // Phase 3 F-16 Sub-3
   dimensions: z.array(DimensionSchema).optional(),
+  // F-18: テキスト注記 / PDF 文字抽出 (schemaVersion 4)
+  textAnnotations: z.array(TextAnnotationSchema).optional(),
+  pdfTextItems: z.array(PdfTextItemSchema).optional(),
   // Phase 3 F-14
   titleBlock: TitleBlockSchema.optional(),
 });

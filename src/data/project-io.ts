@@ -116,6 +116,17 @@ function buildProject(
   if (parsed.dimensions !== undefined) {
     result.dimensions = parsed.dimensions.map((d) => canonicalizeDimension(d, fallbackLayerId));
   }
+  // F-18: textAnnotations / pdfTextItems (v3 以前は欠落 → 設定しない)
+  if (parsed.textAnnotations !== undefined) {
+    result.textAnnotations = parsed.textAnnotations.map((t) =>
+      canonicalizeTextAnnotation(t, fallbackLayerId),
+    );
+  }
+  if (parsed.pdfTextItems !== undefined) {
+    result.pdfTextItems = parsed.pdfTextItems.map((t) =>
+      canonicalizePdfTextItem(t, fallbackLayerId),
+    );
+  }
   // Phase 3 F-14: titleBlock (あればそのまま引き継ぐ)
   if (parsed.titleBlock !== undefined) {
     result.titleBlock = parsed.titleBlock;
@@ -150,6 +161,33 @@ function canonicalizeDimension(
     from: d.from,
     to: d.to,
     layerId: d.layerId ?? fallbackLayerId,
+  };
+}
+
+function canonicalizeTextAnnotation(
+  t: NonNullable<ParsedProject['textAnnotations']>[number],
+  fallbackLayerId: string,
+): import('./types').TextAnnotation {
+  return {
+    id: t.id,
+    position: t.position,
+    text: t.text,
+    fontSizeMm: t.fontSizeMm,
+    color: t.color,
+    layerId: t.layerId ?? fallbackLayerId,
+  };
+}
+
+function canonicalizePdfTextItem(
+  t: NonNullable<ParsedProject['pdfTextItems']>[number],
+  fallbackLayerId: string,
+): import('./types').PdfTextItem {
+  return {
+    id: t.id,
+    text: t.text,
+    position: t.position,
+    fontSizeMm: t.fontSizeMm,
+    layerId: t.layerId ?? fallbackLayerId,
   };
 }
 

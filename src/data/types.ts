@@ -252,6 +252,52 @@ export interface Dimension {
   layerId: string;
 }
 
+/**
+ * F-18: 図面に自由配置するテキスト注記。
+ * position は symbols と同じ mm 座標系(紙面 mm)で左上アンカー。
+ * フォントサイズ・色は注記ごとに保持し、図面と一緒に拡縮表示する。
+ * 削除・移動・アンドゥは symbols / dimensions と同じ基盤に乗る。
+ */
+export interface TextAnnotation {
+  /** UUID */
+  id: string;
+  /** 左上アンカー位置 (mm) */
+  position: { x: number; y: number };
+  /** 表示文字列 (改行可) */
+  text: string;
+  /** 文字高さ (紙面 mm)。描画時は paperPxPerMm を掛けてズーム連動 */
+  fontSizeMm: number;
+  /** 文字色 (#RRGGBB) */
+  color: string;
+  /** 所属レイヤー ID (表示/ロック/出力に乗る) */
+  layerId: string;
+}
+
+/**
+ * PDF 内から抽出したテキスト(参照用)。読み取り専用の「PDF文字」レイヤーに表示する。
+ * 元図面の文字を検索・参照する用途。編集したい場合は importPdfTextAsAnnotations で
+ * TextAnnotation に複製する。座標は symbols と同じ mm 系(紙面 mm、左上アンカー)。
+ */
+export interface PdfTextItem {
+  /** UUID */
+  id: string;
+  /** 抽出文字列 */
+  text: string;
+  /** 左上アンカー位置 (mm) */
+  position: { x: number; y: number };
+  /** 文字高さ (紙面 mm) */
+  fontSizeMm: number;
+  /** 所属レイヤー ID(専用「PDF文字」レイヤー) */
+  layerId: string;
+}
+
+/** F-18: テキスト注記の既定フォントサイズ(紙面 mm)。A1 図面で読める程度。 */
+export const DEFAULT_TEXT_FONT_SIZE_MM = 5;
+/** F-18: テキスト注記の既定色。 */
+export const DEFAULT_TEXT_COLOR = '#333333';
+/** PDF 文字抽出の専用レイヤー名(参照用・既定 locked)。 */
+export const PDF_TEXT_LAYER_NAME = 'PDF文字';
+
 /** Phase 3 F-14: 表題欄の配置位置。 */
 export type TitleBlockPosition = 'bottom-right' | 'top-right' | 'bottom-left' | 'top-left';
 
@@ -291,6 +337,12 @@ export interface Project {
   /** Phase 3 F-16 Sub-3 で追加 (schemaVersion 3)。後方互換のため optional。
    *  図面に残す寸法注記。座標は symbols と同じ mm 系。 */
   dimensions?: Dimension[] | undefined;
+  /** F-18 で追加 (schemaVersion 4)。後方互換のため optional。
+   *  図面に自由配置したテキスト注記。座標は symbols と同じ mm 系。 */
+  textAnnotations?: TextAnnotation[] | undefined;
+  /** PDF 文字抽出 (schemaVersion 4)。後方互換のため optional。
+   *  PDF を開いた際に抽出した文字(参照用、専用「PDF文字」レイヤー所属)。 */
+  pdfTextItems?: PdfTextItem[] | undefined;
   /** Phase 3 F-14 で追加 (schemaVersion 3 内で追加)。表題欄設定。未設定なら表題欄なし。 */
   titleBlock?: TitleBlockConfig | undefined;
   /** Phase 2-A2 で追加。後方互換のため optional (未指定なら DEFAULT_GRID_CONFIG) */
