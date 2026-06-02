@@ -1,6 +1,6 @@
 [package]
 name = "denkeez"
-version = "0.16.0"
+version = "0.17.0"
 description = "Denkeez (デンキーズ・仮称) — 電気工事業者向け平面図エディタ"
 authors = ["Daisuke (有限会社 北嶺建設)"]
 license = "UNLICENSED"

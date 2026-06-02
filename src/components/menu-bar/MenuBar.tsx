@@ -2,6 +2,7 @@
 // M1: PDF を開く / M3 dirty テスト / M4: 新規・開く・保存 / M5: PDF 出力 + 90° 回転
 
 import { useState } from 'react';
+import { useStore } from 'zustand';
 import { useProjectStore } from '../../data/project-store';
 import { renderPdfPage, type Rotation } from '../../pdf/pdf-loader';
 import {
@@ -73,6 +74,12 @@ export function MenuBar(): JSX.Element {
   // Phase 2-G2: About / 免責ダイアログ
   const [aboutOpen, setAboutOpen] = useState(false);
   const [titleBlockOpen, setTitleBlockOpen] = useState(false);
+
+  // アンドゥ・リドゥ (zundo temporal の履歴を購読してボタン活性を制御)
+  const canUndo = useStore(useProjectStore.temporal, (s) => s.pastStates.length > 0);
+  const canRedo = useStore(useProjectStore.temporal, (s) => s.futureStates.length > 0);
+  const handleUndo = (): void => useProjectStore.temporal.getState().undo();
+  const handleRedo = (): void => useProjectStore.temporal.getState().redo();
 
   const wrap = async (fn: () => Promise<void>): Promise<void> => {
     setError(null);
@@ -257,6 +264,25 @@ export function MenuBar(): JSX.Element {
       </button>
       <button onClick={handleSaveAs} disabled={busy} type="button">
         名前を付けて保存
+      </button>
+      <span style={separatorStyle}>|</span>
+      <button
+        onClick={handleUndo}
+        disabled={busy || !canUndo}
+        type="button"
+        title="元に戻す (Ctrl+Z)"
+        aria-label="元に戻す"
+      >
+        ↶ 戻る
+      </button>
+      <button
+        onClick={handleRedo}
+        disabled={busy || !canRedo}
+        type="button"
+        title="やり直し (Ctrl+Y)"
+        aria-label="やり直し"
+      >
+        ↷ やり直し
       </button>
       <span style={separatorStyle}>|</span>
       <button onClick={handleOpenPdf} disabled={busy} type="button">
