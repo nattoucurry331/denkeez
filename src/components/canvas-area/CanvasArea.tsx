@@ -36,9 +36,10 @@ import { TextEditOverlay, type TextEditTarget } from './TextEditOverlay';
 import { useKeyboardShortcuts } from '../../hooks/use-keyboard-shortcuts';
 import { deleteSelection } from '../../hooks/delete-selection';
 import { pxToMm, mmToPx, computePxPerMm, distancePx } from '../../utils/coordinate';
+import { snapPointMm, constrainOrtho } from '../../utils/snap-grid';
 import { getSymbolDefinition } from '../../symbols/symbol-registry';
 import { lockedLayerIds } from '../../data/layer-helpers';
-import { BACKGROUND_LAYER_ID } from '../../data/types';
+import { BACKGROUND_LAYER_ID, DEFAULT_GRID_CONFIG } from '../../data/types';
 import { PRODUCT_IMAGE_DEFAULT_WIDTH_MM } from '../../utils/product-size';
 import { WelcomeScreen } from './WelcomeScreen';
 
@@ -80,6 +81,8 @@ export function CanvasArea(): JSX.Element {
   const appendWireWaypoint = useProjectStore((s) => s.appendWireWaypoint);
   const addWire = useProjectStore((s) => s.addWire);
   const resetWireProgress = useProjectStore((s) => s.resetWireProgress);
+  // F-16 Sub-2: グリッド吸着用 (snap は grid.enabled のとき作用)
+  const grid = useProjectStore((s) => s.project.grid) ?? DEFAULT_GRID_CONFIG;
 
   const viewportScale = useViewportStore((s) => s.scale);
   const offsetX = useViewportStore((s) => s.offsetX);
@@ -212,6 +215,7 @@ export function CanvasArea(): JSX.Element {
       {mode.kind === 'measure' && (
         <span style={measureModeBadgeStyle}>
           寸法計測中: {mode.firstPointPx ? '2 点目をクリック' : '1 点目をクリック'}
+          {grid.enabled && ' ／ グリッド吸着(Shift=直角 / Alt=解除)'}
           {!drawing.scale && ' ／ 縮尺未設定のため「紙面寸法」です'}
           {lastMeasurement && ` ／ 直前: ${lastMeasurement.label}`}
           {' '}(ESC で解除)
@@ -220,13 +224,15 @@ export function CanvasArea(): JSX.Element {
       {mode.kind === 'dimension' && (
         <span style={measureModeBadgeStyle}>
           寸法線モード: {mode.firstPointPx ? '2 点目をクリックで寸法を確定' : '1 点目をクリック'}
+          {grid.enabled && ' ／ グリッド吸着(Shift=直角 / Alt=解除)'}
           {!drawing.scale && ' ／ 縮尺未設定のため「紙面寸法」です'}
           {' '}(ESC で解除)
         </span>
       )}
       {mode.kind === 'wire' && (
         <span style={wireModeBadgeStyle}>
-          配線モード: {!mode.fromSymbolId ? '始点シンボルをクリック' : '中継点クリック / 終点シンボルをクリック'} (ESC で途中解除)
+          配線モード: {!mode.fromSymbolId ? '始点シンボルをクリック' : '中継点クリック / 終点シンボルをクリック'}
+          {grid.enabled && ' ／ 中継点グリッド吸着(Alt=解除)'} (ESC で途中解除)
         </span>
       )}
       {mode.kind === 'text' && (
@@ -262,6 +268,25 @@ export function CanvasArea(): JSX.Element {
   //   (JIS C 0303 の慣例: 記号は縮尺に関わらず一定の見やすい大きさで描く)
   const paperPxPerMm = canvas.width / drawing.widthMm;
 
+  // F-16 Sub-2: グリッド吸着 + 直角拘束。grid.enabled かつ Alt 非押下で交点吸着、
+  // Shift + fromMm 指定で直角拘束。raw mm 点を受けて snapped mm 点を返す。
+  const snapMm = (
+    rawMm: { x: number; y: number },
+    opts: { fromMm?: { x: number; y: number }; shift?: boolean; alt?: boolean },
+  ): { x: number; y: number } => {
+    let m = grid.enabled && !opts.alt ? snapPointMm(rawMm, grid.spacingMm) : rawMm;
+    if (opts.shift && opts.fromMm) m = constrainOrtho(opts.fromMm, m);
+    return m;
+  };
+  // クリック/カーソルの px 点を吸着後の px 点に変換する (measure/dimension 用)。
+  const snapPx = (
+    pointPx: { x: number; y: number },
+    opts: { fromMm?: { x: number; y: number }; shift?: boolean; alt?: boolean },
+  ): { x: number; y: number } => {
+    const m = snapMm({ x: pxToMm(pointPx.x, scaleObj), y: pxToMm(pointPx.y, scaleObj) }, opts);
+    return { x: mmToPx(m.x, scaleObj), y: mmToPx(m.y, scaleObj) };
+  };
+
   const isStageBackground = (e: KonvaEventObject<MouseEvent>): boolean => {
     const target = e.target;
     const stage = target.getStage();
@@ -294,13 +319,23 @@ export function CanvasArea(): JSX.Element {
     setCursorMm({ x: pxToMm(point.x, scaleObj), y: pxToMm(point.y, scaleObj) });
 
     if (mode.kind === 'scale') {
+      // スケール校正は既知実寸の点をクリックするため吸着しない
       setScaleCursorPx(point);
     }
     if (mode.kind === 'measure' || mode.kind === 'dimension') {
-      setMeasureCursorPx(point);
+      const fromMm = mode.firstPointPx
+        ? { x: pxToMm(mode.firstPointPx.x, scaleObj), y: pxToMm(mode.firstPointPx.y, scaleObj) }
+        : undefined;
+      setMeasureCursorPx(
+        snapPx(point, {
+          ...(fromMm ? { fromMm } : {}),
+          shift: e.evt.shiftKey,
+          alt: e.evt.altKey,
+        }),
+      );
     }
     if (mode.kind === 'wire') {
-      setWireCursorPx(point);
+      setWireCursorPx(snapPx(point, { alt: e.evt.altKey }));
     }
 
     if (selectionStartRef.current) {
@@ -376,18 +411,20 @@ export function CanvasArea(): JSX.Element {
 
     if (mode.kind === 'measure') {
       if (!mode.firstPointPx) {
-        // 新しい計測の開始: 直前の結果を消して 1 点目を置く
+        // 新しい計測の開始: 直前の結果を消して 1 点目を置く (グリッド吸着)
         setLastMeasurement(null);
-        setMeasureFirstPoint(point);
+        setMeasureFirstPoint(snapPx(point, { shift: e.evt.shiftKey, alt: e.evt.altKey }));
       } else {
-        const distance = distancePx(mode.firstPointPx, point);
+        const fromMm = { x: pxToMm(mode.firstPointPx.x, scaleObj), y: pxToMm(mode.firstPointPx.y, scaleObj) };
+        const toPx = snapPx(point, { fromMm, shift: e.evt.shiftKey, alt: e.evt.altKey });
+        const distance = distancePx(mode.firstPointPx, toPx);
         if (distance < 1) return;
         // px → mm 変換は scaleObj (校正済みなら実寸、未校正は紙面 mm)
         const mm = distance / pxPerMm;
         const calibrated = !!drawing.scale;
         setLastMeasurement({
           fromPx: mode.firstPointPx,
-          toPx: point,
+          toPx,
           label: formatDistanceMm(mm, calibrated),
         });
         // 2 点目確定 → 次の計測に備えて 1 点目をクリア (結果は凍結表示が残る)
@@ -398,15 +435,18 @@ export function CanvasArea(): JSX.Element {
 
     if (mode.kind === 'dimension') {
       if (!mode.firstPointPx) {
-        setDimensionFirstPoint(point);
+        setDimensionFirstPoint(snapPx(point, { shift: e.evt.shiftKey, alt: e.evt.altKey }));
       } else {
-        const distance = distancePx(mode.firstPointPx, point);
-        if (distance < 1) return;
-        // 端点を mm 系で保存 (symbols と同じ座標系)
-        addDimension(
-          { x: pxToMm(mode.firstPointPx.x, scaleObj), y: pxToMm(mode.firstPointPx.y, scaleObj) },
+        // firstPointPx は 1 点目クリック時に吸着済み
+        const fromMm = { x: pxToMm(mode.firstPointPx.x, scaleObj), y: pxToMm(mode.firstPointPx.y, scaleObj) };
+        const toMm = snapMm(
           { x: pxToMm(point.x, scaleObj), y: pxToMm(point.y, scaleObj) },
+          { fromMm, shift: e.evt.shiftKey, alt: e.evt.altKey },
         );
+        const toPx = { x: mmToPx(toMm.x, scaleObj), y: mmToPx(toMm.y, scaleObj) };
+        if (distancePx(mode.firstPointPx, toPx) < 1) return;
+        // 端点を mm 系で保存 (symbols と同じ座標系)
+        addDimension(fromMm, toMm);
         setDimensionFirstPoint(undefined);
       }
       return;
@@ -421,7 +461,11 @@ export function CanvasArea(): JSX.Element {
         ? symbols.find((s) => s.id === symbolId && !lockedSet.has(s.layerId))
         : null;
       const usableSymbolId = symbol?.id ?? null;
-      const pointMm = { x: pxToMm(point.x, scaleObj), y: pxToMm(point.y, scaleObj) };
+      // F-16 Sub-2: waypoint はグリッド吸着 (Alt で解除)。始点/終点はシンボル位置を使う。
+      const pointMm = snapMm(
+        { x: pxToMm(point.x, scaleObj), y: pxToMm(point.y, scaleObj) },
+        { alt: e.evt.altKey },
+      );
 
       if (!mode.fromSymbolId) {
         // 1 点目は必ずシンボル
