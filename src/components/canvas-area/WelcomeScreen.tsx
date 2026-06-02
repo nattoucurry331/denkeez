@@ -16,7 +16,7 @@ export function WelcomeScreen(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const run = async (fn: () => Promise<boolean>): Promise<void> => {
+  const run = async (fn: () => Promise<unknown>): Promise<void> => {
     setError(null);
     setBusy(true);
     try {

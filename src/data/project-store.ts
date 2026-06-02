@@ -14,15 +14,23 @@ import type { Rotation } from '../pdf/pdf-loader';
 import type {
   Dimension,
   Layer,
+  PdfTextItem,
   Project,
   ProjectDrawing,
   ProjectDrawingScale,
   ProjectSymbol,
   PropertyValue,
+  TextAnnotation,
   TitleBlockConfig,
   Wire,
 } from './types';
-import { DEFAULT_GRID_CONFIG } from './types';
+import {
+  BACKGROUND_LAYER_ID,
+  DEFAULT_GRID_CONFIG,
+  DEFAULT_TEXT_COLOR,
+  DEFAULT_TEXT_FONT_SIZE_MM,
+  PDF_TEXT_LAYER_NAME,
+} from './types';
 import { computeWireLengthMm } from '../utils/wire-geometry';
 import { createDefaultLayers, pickFirstUserLayerId } from './layer-defaults';
 
@@ -46,6 +54,8 @@ export type EditorMode =
   | { kind: 'measure'; firstPointPx?: { x: number; y: number } | undefined }
   // Phase 3 F-16 Sub-3: 寸法線モード (図面に残す)。2 点クリックで Dimension を追加。
   | { kind: 'dimension'; firstPointPx?: { x: number; y: number } | undefined }
+  // F-18: テキスト注記モード。クリックした位置に文字を配置して編集する。
+  | { kind: 'text' }
   | {
       kind: 'wire';
       fromSymbolId?: string | undefined;
@@ -145,6 +155,25 @@ export interface ProjectActions {
     to: { x: number; y: number },
   ) => void;
   removeDimensions: (ids: readonly string[]) => void;
+  // F-18: テキスト注記
+  enterTextMode: () => void;
+  /** 指定位置に空 or 初期テキストの注記を追加し、生成した ID を返す (即編集用) */
+  addTextAnnotation: (position: { x: number; y: number }, text?: string) => string;
+  updateTextAnnotation: (
+    id: string,
+    updates: Partial<Pick<TextAnnotation, 'text' | 'position' | 'fontSizeMm' | 'color'>>,
+  ) => void;
+  removeTextAnnotations: (ids: readonly string[]) => void;
+  // F-18: PDF 文字抽出 (参照レイヤー + 注記取り込み)
+  /**
+   * PDF から抽出した文字を専用「PDF文字」レイヤー (locked) に格納する。
+   * 空配列を渡すと PDF 文字レイヤーと項目を除去する (再抽出・回転時のクリア用)。
+   */
+  setPdfTextItems: (
+    items: ReadonlyArray<Omit<PdfTextItem, 'layerId'>>,
+  ) => void;
+  /** 指定の PDF 文字を編集可能な TextAnnotation としてアクティブレイヤーに複製する */
+  importPdfTextAsAnnotations: (ids: readonly string[]) => void;
   // Phase 3 F-14: 表題欄
   setTitleBlock: (config: TitleBlockConfig | undefined) => void;
   // Phase 2-C2: 配線
@@ -585,6 +614,156 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       },
       dirty: true,
       selectedIds: get().selectedIds.filter((sid) => !idSet.has(sid)),
+    });
+  },
+
+  // F-18: テキスト注記
+  enterTextMode: () =>
+    set({
+      mode: { kind: 'text' },
+      selectedIds: [],
+    }),
+
+  addTextAnnotation: (position, text) => {
+    const current = get().project;
+    const targetLayerId = current.layers.some((l) => l.id === get().activeLayerId)
+      ? get().activeLayerId
+      : pickFirstUserLayerId(current.layers);
+    const annotation: TextAnnotation = {
+      id: generateId(),
+      position,
+      text: text ?? '',
+      fontSizeMm: DEFAULT_TEXT_FONT_SIZE_MM,
+      color: DEFAULT_TEXT_COLOR,
+      layerId: targetLayerId,
+    };
+    set({
+      project: {
+        ...current,
+        textAnnotations: [...(current.textAnnotations ?? []), annotation],
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+    return annotation.id;
+  },
+
+  updateTextAnnotation: (id, updates) => {
+    const current = get().project;
+    const list = current.textAnnotations ?? [];
+    if (!list.some((t) => t.id === id)) return;
+    set({
+      project: {
+        ...current,
+        textAnnotations: list.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  removeTextAnnotations: (ids) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const current = get().project;
+    const list = current.textAnnotations ?? [];
+    if (!list.some((t) => idSet.has(t.id))) return;
+    set({
+      project: {
+        ...current,
+        textAnnotations: list.filter((t) => !idSet.has(t.id)),
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+      selectedIds: get().selectedIds.filter((sid) => !idSet.has(sid)),
+    });
+  },
+
+  // F-18: PDF 文字抽出
+  setPdfTextItems: (items) => {
+    const current = get().project;
+
+    // 空 → PDF 文字レイヤーと項目を除去 (再抽出・回転クリア用)
+    if (items.length === 0) {
+      const existing = current.layers.find(
+        (l) => l.kind === 'user' && l.name === PDF_TEXT_LAYER_NAME,
+      );
+      set({
+        project: {
+          ...current,
+          layers: existing
+            ? current.layers.filter((l) => l.id !== existing.id)
+            : current.layers,
+          pdfTextItems: [],
+          meta: { ...current.meta, updatedAt: nowIso() },
+        },
+        dirty: true,
+      });
+      return;
+    }
+
+    // 専用「PDF文字」レイヤーを確保 (locked)。既存があれば再利用、無ければ背景直上に挿入。
+    let layers = current.layers;
+    let pdfLayer = layers.find(
+      (l) => l.kind === 'user' && l.name === PDF_TEXT_LAYER_NAME,
+    );
+    if (!pdfLayer) {
+      pdfLayer = {
+        id: generateId(),
+        name: PDF_TEXT_LAYER_NAME,
+        color: '#888888',
+        visible: true,
+        locked: true,
+        kind: 'user',
+      };
+      // 背景レイヤー (index 0) の直上に配置
+      const bgIndex = layers.findIndex((l) => l.id === BACKGROUND_LAYER_ID);
+      const insertAt = bgIndex >= 0 ? bgIndex + 1 : 0;
+      layers = [...layers.slice(0, insertAt), pdfLayer, ...layers.slice(insertAt)];
+    }
+    const layerId = pdfLayer.id;
+    const mapped: PdfTextItem[] = items.map((it) => ({
+      id: it.id,
+      text: it.text,
+      position: it.position,
+      fontSizeMm: it.fontSizeMm,
+      layerId,
+    }));
+    set({
+      project: {
+        ...current,
+        layers,
+        pdfTextItems: mapped,
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
+    });
+  },
+
+  importPdfTextAsAnnotations: (ids) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const current = get().project;
+    const source = (current.pdfTextItems ?? []).filter((t) => idSet.has(t.id));
+    if (source.length === 0) return;
+    const targetLayerId = current.layers.some((l) => l.id === get().activeLayerId)
+      ? get().activeLayerId
+      : pickFirstUserLayerId(current.layers);
+    const created: TextAnnotation[] = source.map((t) => ({
+      id: generateId(),
+      position: t.position,
+      text: t.text,
+      fontSizeMm: t.fontSizeMm,
+      color: DEFAULT_TEXT_COLOR,
+      layerId: targetLayerId,
+    }));
+    set({
+      project: {
+        ...current,
+        textAnnotations: [...(current.textAnnotations ?? []), ...created],
+        meta: { ...current.meta, updatedAt: nowIso() },
+      },
+      dirty: true,
     });
   },
 

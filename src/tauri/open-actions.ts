@@ -5,6 +5,7 @@
 
 import { useProjectStore } from '../data/project-store';
 import { renderPdfPage } from '../pdf/pdf-loader';
+import { extractPdfText } from '../pdf/pdf-text';
 import { deserializeProject } from '../data/project-io';
 import {
   selectPdfFile,
@@ -16,13 +17,20 @@ import {
   ptToMm,
 } from './api';
 
+/** PDF を開いた結果。textItemCount で抽出文字数を呼び出し側に伝える (通知用)。 */
+export interface OpenPdfResult {
+  opened: boolean;
+  /** 抽出した PDF 文字の数 (0 ならスキャン PDF 等で文字なし) */
+  textItemCount: number;
+}
+
 /**
- * PDF ファイル選択 → 1 ページ目をレンダー → store に反映。
- * @returns 実際に読み込んだら true、キャンセルなら false
+ * PDF ファイル選択 → 1 ページ目をレンダー → 文字抽出 → store に反映。
+ * @returns opened=実際に読み込んだか / textItemCount=抽出文字数
  */
-export async function openPdfIntoStore(): Promise<boolean> {
+export async function openPdfIntoStore(): Promise<OpenPdfResult> {
   const path = await selectPdfFile();
-  if (!path) return false;
+  if (!path) return { opened: false, textItemCount: 0 };
   const buffer = await readBinaryFile(path);
   const rendered = await renderPdfPage(buffer, 1, 2.0, 0);
   useProjectStore.getState().loadPdf(
@@ -35,7 +43,13 @@ export async function openPdfIntoStore(): Promise<boolean> {
     rendered.canvas,
     buffer,
   );
-  return true;
+  // F-18: PDF 内の文字を抽出して専用「PDF文字」レイヤーへ自動保存。
+  // 文字が無い (スキャン PDF 等) 場合は空配列 → レイヤーは作られない。
+  const textItems = await extractPdfText(buffer, 1, 0);
+  if (textItems.length > 0) {
+    useProjectStore.getState().setPdfTextItems(textItems);
+  }
+  return { opened: true, textItemCount: textItems.length };
 }
 
 /**

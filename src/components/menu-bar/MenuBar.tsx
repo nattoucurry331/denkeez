@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { useStore } from 'zustand';
 import { useProjectStore } from '../../data/project-store';
+import { deleteSelection } from '../../hooks/delete-selection';
 import { renderPdfPage, type Rotation } from '../../pdf/pdf-loader';
 import {
   selectProjectFileToSave,
@@ -39,6 +40,10 @@ export function MenuBar(): JSX.Element {
   const pdfBuffer = useProjectStore((s) => s.pdfBuffer);
   const pdfRotation = useProjectStore((s) => s.pdfRotation);
   const mode = useProjectStore((s) => s.mode);
+  const selectedIds = useProjectStore((s) => s.selectedIds);
+  const pdfTextItems = useProjectStore((s) => s.project.pdfTextItems);
+  const enterTextMode = useProjectStore((s) => s.enterTextMode);
+  const importPdfTextAsAnnotations = useProjectStore((s) => s.importPdfTextAsAnnotations);
   const newProject = useProjectStore((s) => s.newProject);
   const markSaved = useProjectStore((s) => s.markSaved);
   const setDirty = useProjectStore((s) => s.setDirty);
@@ -108,8 +113,30 @@ export function MenuBar(): JSX.Element {
 
   const handleOpenPdf = (): Promise<void> =>
     wrap(async () => {
-      await openPdfIntoStore();
+      const result = await openPdfIntoStore();
+      if (result.opened) {
+        setInfo(
+          result.textItemCount > 0
+            ? `PDF を開きました。文字 ${result.textItemCount} 件を「PDF文字」レイヤーに取り込みました`
+            : 'PDF を開きました(抽出できる文字はありませんでした。画像のみの PDF の可能性があります)',
+        );
+      }
     });
+
+  // F-18: PDF 文字を編集可能な注記として一括取り込み (アクティブレイヤーへ)
+  const handleImportPdfText = (): void => {
+    setError(null);
+    setInfo(null);
+    const items = pdfTextItems ?? [];
+    if (items.length === 0) return;
+    importPdfTextAsAnnotations(items.map((t) => t.id));
+    setInfo(`PDF文字 ${items.length} 件を編集可能なテキスト注記に取り込みました`);
+  };
+
+  // 発見性改善: 選択中オブジェクトの削除 (Delete キーと同じ処理を共有)
+  const handleDelete = (): void => {
+    void deleteSelection();
+  };
 
   const handleOpenProject = (): Promise<void> =>
     wrap(async () => {
@@ -266,23 +293,32 @@ export function MenuBar(): JSX.Element {
         名前を付けて保存
       </button>
       <span style={separatorStyle}>|</span>
+      {/* 発見性改善: マウス操作で「元に戻す / やり直す / 削除」できるようボタン化 (F-06/F-11) */}
       <button
         onClick={handleUndo}
         disabled={busy || !canUndo}
         type="button"
-        title="元に戻す (Ctrl+Z)"
+        title="直前の操作を元に戻す (Ctrl+Z)"
         aria-label="元に戻す"
       >
-        ↶ 戻る
+        ↶ 元に戻す
       </button>
       <button
         onClick={handleRedo}
         disabled={busy || !canRedo}
         type="button"
-        title="やり直し (Ctrl+Y)"
+        title="元に戻した操作をやり直す (Ctrl+Y)"
         aria-label="やり直し"
       >
-        ↷ やり直し
+        ↷ やり直す
+      </button>
+      <button
+        onClick={handleDelete}
+        disabled={busy || selectedIds.length === 0}
+        type="button"
+        title="選択中のシンボル・配線・寸法・文字を削除 (Delete キー)"
+      >
+        🗑 削除
       </button>
       <span style={separatorStyle}>|</span>
       <button onClick={handleOpenPdf} disabled={busy} type="button">
@@ -361,6 +397,25 @@ export function MenuBar(): JSX.Element {
       >
         {mode.kind === 'wire' ? '✓ 配線モード (ESC で解除)' : '配線'}
       </button>
+      <button
+        onClick={() => (mode.kind === 'text' ? exitMode() : enterTextMode())}
+        disabled={busy || !pdfCanvas}
+        type="button"
+        style={mode.kind === 'text' ? activeButtonStyle : undefined}
+        title="文字モード: 図面上をクリックして文字を入力 (既存はダブルクリックで編集)"
+      >
+        {mode.kind === 'text' ? '✓ 文字モード (ESC で解除)' : '文字'}
+      </button>
+      {pdfTextItems && pdfTextItems.length > 0 && (
+        <button
+          onClick={handleImportPdfText}
+          disabled={busy}
+          type="button"
+          title="PDF から抽出した文字を、編集できるテキスト注記としてアクティブレイヤーに取り込む"
+        >
+          PDF文字を取り込む ({pdfTextItems.length})
+        </button>
+      )}
       {project.drawing?.scale && (
         <button
           onClick={() =>

@@ -5,7 +5,7 @@ export const APP_NAME = 'Denkeez';
 export const APP_NAME_KANA = 'デンキーズ';
 export const APP_NAME_DISPLAY = `${APP_NAME}（${APP_NAME_KANA}・仮称）`;
 export const APP_FILE_EXTENSION = 'dkz';
-export const APP_VERSION = '0.17.0';
+export const APP_VERSION = '0.18.0';
 
 // プロジェクトファイルのスキーマバージョン。
 // REQUIREMENTS.md §5.2 — 後方互換のためファイルに保存し、
@@ -16,4 +16,5 @@ export const APP_VERSION = '0.17.0';
 //  2: Phase 2-D1〜  (layers 必須、ProjectSymbol.layerId / Wire.layerId 必須)
 //                   旧 v1 ファイルは project-io.ts のマイグレーションで「未分類」レイヤーに自動割当。
 //  3: Phase 3 F-16 Sub-3 (Project.dimensions 追加)。v2 以前は dimensions 欠落 → [] 扱い。
-export const SCHEMA_VERSION = 3;
+//  4: F-18 (Project.textAnnotations / pdfTextItems 追加)。v3 以前は欠落 → 未設定 (= [] 扱い)。
+export const SCHEMA_VERSION = 4;
