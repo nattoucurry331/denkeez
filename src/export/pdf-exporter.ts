@@ -24,6 +24,7 @@ import type {
   ProjectSymbol,
   SymbolImage,
   SymbolType,
+  TextAnnotation,
   Wire,
   WireType,
 } from '../data/types';
@@ -35,6 +36,7 @@ import { computeEffectiveSymbolScale } from '../data/render-settings-store';
 import { formatDistanceMmAscii } from '../utils/dimension-format';
 import { formatScaleRatio } from '../utils/scale-ratio';
 import { computeTitleRows, titleBlockOrigin, renderTitleBlockImage } from './title-block';
+import { renderTextAnnotationImage } from './text-annotation-image';
 
 const MM_PER_INCH = 25.4;
 const PT_PER_INCH = 72;
@@ -181,6 +183,9 @@ export function exportProjectAsPdf(options: ExportOptions): Uint8Array {
   // Phase 3 F-16 Sub-4: 寸法注記をシンボルの上に描画 (レイヤーフィルタ適用)
   drawDimensions(pdf, project.dimensions ?? [], allowedLayers, project.layers, !!drawing.scale, tx, ty);
 
+  // F-18: 自由テキスト注記を寸法線の上に描画 (日本語は canvas ラスター)
+  drawTextAnnotations(pdf, project.textAnnotations ?? [], allowedLayers, tx, ty, ts);
+
   // Phase 3 F-14: 表題欄を最前面に合成 (日本語は canvas でラスター描画した画像を貼る)
   if (project.titleBlock?.enabled) {
     const scaleText = formatScaleRatio(drawing, backgroundCanvas.width) ?? '(縮尺未設定)';
@@ -240,6 +245,39 @@ function drawDimensions(
     pdf.text(formatDistanceMmAscii(distMm, calibrated), (x1 + x2) / 2, (y1 + y2) / 2 - 1, {
       align: 'center',
     });
+  }
+}
+
+/**
+ * F-18: 自由テキスト注記を PDF に描画する。
+ * 端点(左上アンカー)は実寸 mm 系 (tx/ty)、文字サイズは紙面 mm (ts) で扱う。
+ * 日本語のため canvas でラスター化した PNG を貼る (表題欄と同方針)。
+ */
+function drawTextAnnotations(
+  pdf: jsPDF,
+  annotations: readonly TextAnnotation[],
+  allowedLayers: ReadonlySet<string>,
+  tx: (mm: number) => number,
+  ty: (mm: number) => number,
+  ts: (mm: number) => number,
+): void {
+  for (const a of annotations) {
+    if (!allowedLayers.has(a.layerId)) continue;
+    if (a.text.trim() === '') continue;
+    const img = renderTextAnnotationImage(a.text, a.fontSizeMm, a.color);
+    if (!img.dataUrl) continue;
+    try {
+      pdf.addImage(
+        img.dataUrl,
+        'PNG',
+        tx(a.position.x),
+        ty(a.position.y),
+        ts(img.widthMm),
+        ts(img.heightMm),
+      );
+    } catch {
+      // 1 件失敗しても全体出力は止めない (drawImageSymbol と同方針)
+    }
   }
 }
 
