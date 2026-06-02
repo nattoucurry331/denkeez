@@ -232,7 +232,8 @@ export function CanvasArea(): JSX.Element {
       {mode.kind === 'wire' && (
         <span style={wireModeBadgeStyle}>
           配線モード: {!mode.fromSymbolId ? '始点シンボルをクリック' : '中継点クリック / 終点シンボルをクリック'}
-          {grid.enabled && ' ／ 中継点グリッド吸着(Alt=解除)'} (ESC で途中解除)
+          {mode.fromSymbolId && ' ／ 直角(Shiftで自由)'}
+          {grid.enabled && ' ／ グリッド吸着(Alt=解除)'} (ESC で途中解除)
         </span>
       )}
       {mode.kind === 'text' && (
@@ -270,21 +271,42 @@ export function CanvasArea(): JSX.Element {
 
   // F-16 Sub-2: グリッド吸着 + 直角拘束。grid.enabled かつ Alt 非押下で交点吸着、
   // Shift + fromMm 指定で直角拘束。raw mm 点を受けて snapped mm 点を返す。
+  // orthoDefault=false: Shift 押下時に直角拘束 (計測・寸法線)。
+  // orthoDefault=true : 既定で直角拘束し Shift 押下で自由角度 (配線)。
   const snapMm = (
     rawMm: { x: number; y: number },
-    opts: { fromMm?: { x: number; y: number }; shift?: boolean; alt?: boolean },
+    opts: {
+      fromMm?: { x: number; y: number };
+      shift?: boolean;
+      alt?: boolean;
+      orthoDefault?: boolean;
+    },
   ): { x: number; y: number } => {
     let m = grid.enabled && !opts.alt ? snapPointMm(rawMm, grid.spacingMm) : rawMm;
-    if (opts.shift && opts.fromMm) m = constrainOrtho(opts.fromMm, m);
+    const wantOrtho = opts.orthoDefault ? !opts.shift : !!opts.shift;
+    if (wantOrtho && opts.fromMm) m = constrainOrtho(opts.fromMm, m);
     return m;
   };
   // クリック/カーソルの px 点を吸着後の px 点に変換する (measure/dimension 用)。
   const snapPx = (
     pointPx: { x: number; y: number },
-    opts: { fromMm?: { x: number; y: number }; shift?: boolean; alt?: boolean },
+    opts: {
+      fromMm?: { x: number; y: number };
+      shift?: boolean;
+      alt?: boolean;
+      orthoDefault?: boolean;
+    },
   ): { x: number; y: number } => {
     const m = snapMm({ x: pxToMm(pointPx.x, scaleObj), y: pxToMm(pointPx.y, scaleObj) }, opts);
     return { x: mmToPx(m.x, scaleObj), y: mmToPx(m.y, scaleObj) };
+  };
+
+  // F-16/直角配線: 配線の直角拘束の基準点 (直前 waypoint、無ければ始点シンボル位置)。
+  const wirePrevPointMm = (): { x: number; y: number } | undefined => {
+    if (mode.kind !== 'wire' || !mode.fromSymbolId) return undefined;
+    if (mode.waypoints.length > 0) return mode.waypoints[mode.waypoints.length - 1];
+    const sym = symbols.find((s) => s.id === mode.fromSymbolId);
+    return sym ? sym.position : undefined;
   };
 
   const isStageBackground = (e: KonvaEventObject<MouseEvent>): boolean => {
@@ -335,7 +357,15 @@ export function CanvasArea(): JSX.Element {
       );
     }
     if (mode.kind === 'wire') {
-      setWireCursorPx(snapPx(point, { alt: e.evt.altKey }));
+      const prevMm = wirePrevPointMm();
+      setWireCursorPx(
+        snapPx(point, {
+          ...(prevMm ? { fromMm: prevMm } : {}),
+          shift: e.evt.shiftKey,
+          alt: e.evt.altKey,
+          orthoDefault: true,
+        }),
+      );
     }
 
     if (selectionStartRef.current) {
@@ -461,10 +491,17 @@ export function CanvasArea(): JSX.Element {
         ? symbols.find((s) => s.id === symbolId && !lockedSet.has(s.layerId))
         : null;
       const usableSymbolId = symbol?.id ?? null;
-      // F-16 Sub-2: waypoint はグリッド吸着 (Alt で解除)。始点/終点はシンボル位置を使う。
+      // F-16 Sub-2 + 直角配線: waypoint はグリッド吸着 + 直角拘束 (常時 ON、Shift で自由、Alt で吸着解除)。
+      // 直角の基準は直前 waypoint / 始点シンボル位置。始点クリック時は prevMm 無し=拘束なし。
+      const prevMm = wirePrevPointMm();
       const pointMm = snapMm(
         { x: pxToMm(point.x, scaleObj), y: pxToMm(point.y, scaleObj) },
-        { alt: e.evt.altKey },
+        {
+          ...(prevMm ? { fromMm: prevMm } : {}),
+          shift: e.evt.shiftKey,
+          alt: e.evt.altKey,
+          orthoDefault: true,
+        },
       );
 
       if (!mode.fromSymbolId) {
