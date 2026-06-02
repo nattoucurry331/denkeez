@@ -45,9 +45,6 @@ export function MenuBar(): JSX.Element {
   const enterTextMode = useProjectStore((s) => s.enterTextMode);
   const importPdfTextAsAnnotations = useProjectStore((s) => s.importPdfTextAsAnnotations);
   const newProject = useProjectStore((s) => s.newProject);
-  // 発見性改善: アンドゥ/リドゥ可否を temporal ストアから購読してボタン活性を制御
-  const canUndo = useStore(useProjectStore.temporal, (s) => s.pastStates.length > 0);
-  const canRedo = useStore(useProjectStore.temporal, (s) => s.futureStates.length > 0);
   const markSaved = useProjectStore((s) => s.markSaved);
   const setDirty = useProjectStore((s) => s.setDirty);
   const applyPdfRotation = useProjectStore((s) => s.applyPdfRotation);
@@ -82,6 +79,12 @@ export function MenuBar(): JSX.Element {
   // Phase 2-G2: About / 免責ダイアログ
   const [aboutOpen, setAboutOpen] = useState(false);
   const [titleBlockOpen, setTitleBlockOpen] = useState(false);
+
+  // アンドゥ・リドゥ (zundo temporal の履歴を購読してボタン活性を制御)
+  const canUndo = useStore(useProjectStore.temporal, (s) => s.pastStates.length > 0);
+  const canRedo = useStore(useProjectStore.temporal, (s) => s.futureStates.length > 0);
+  const handleUndo = (): void => useProjectStore.temporal.getState().undo();
+  const handleRedo = (): void => useProjectStore.temporal.getState().redo();
 
   const wrap = async (fn: () => Promise<void>): Promise<void> => {
     setError(null);
@@ -292,18 +295,20 @@ export function MenuBar(): JSX.Element {
       <span style={separatorStyle}>|</span>
       {/* 発見性改善: マウス操作で「元に戻す / やり直す / 削除」できるようボタン化 (F-06/F-11) */}
       <button
-        onClick={() => useProjectStore.temporal.getState().undo()}
+        onClick={handleUndo}
         disabled={busy || !canUndo}
         type="button"
         title="直前の操作を元に戻す (Ctrl+Z)"
+        aria-label="元に戻す"
       >
         ↶ 元に戻す
       </button>
       <button
-        onClick={() => useProjectStore.temporal.getState().redo()}
+        onClick={handleRedo}
         disabled={busy || !canRedo}
         type="button"
         title="元に戻した操作をやり直す (Ctrl+Y)"
+        aria-label="やり直し"
       >
         ↷ やり直す
       </button>
