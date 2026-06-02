@@ -171,7 +171,7 @@ export function CanvasArea(): JSX.Element {
         } else if (mode.kind === 'dimension') {
           exitMode();
           setMeasureCursorPx(null);
-        } else if (mode.kind === 'text') {
+        } else if (mode.kind === 'text' || mode.kind === 'pdf-text-pick') {
           exitMode();
         } else {
           clearSelection();

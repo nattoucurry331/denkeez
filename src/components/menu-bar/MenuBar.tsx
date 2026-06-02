@@ -44,6 +44,8 @@ export function MenuBar(): JSX.Element {
   const pdfTextItems = useProjectStore((s) => s.project.pdfTextItems);
   const enterTextMode = useProjectStore((s) => s.enterTextMode);
   const importPdfTextAsAnnotations = useProjectStore((s) => s.importPdfTextAsAnnotations);
+  const enterPdfTextPickMode = useProjectStore((s) => s.enterPdfTextPickMode);
+  const selectedPdfTextIds = useProjectStore((s) => s.selectedPdfTextIds);
   const newProject = useProjectStore((s) => s.newProject);
   const markSaved = useProjectStore((s) => s.markSaved);
   const setDirty = useProjectStore((s) => s.setDirty);
@@ -131,6 +133,17 @@ export function MenuBar(): JSX.Element {
     if (items.length === 0) return;
     importPdfTextAsAnnotations(items.map((t) => t.id));
     setInfo(`PDF文字 ${items.length} 件を編集可能なテキスト注記に取り込みました`);
+  };
+
+  // F-18 個別取込: pick モードで選んだ PDF 文字だけを注記化して取り込む
+  const handleImportSelectedPdfText = (): void => {
+    setError(null);
+    setInfo(null);
+    const ids = selectedPdfTextIds;
+    if (ids.length === 0) return;
+    importPdfTextAsAnnotations(ids);
+    exitMode(); // pick モード終了 + 選択クリア
+    setInfo(`選択した PDF文字 ${ids.length} 件を取り込みました`);
   };
 
   // 発見性改善: 選択中オブジェクトの削除 (Delete キーと同じ処理を共有)
@@ -406,15 +419,41 @@ export function MenuBar(): JSX.Element {
       >
         {mode.kind === 'text' ? '✓ 文字モード (ESC で解除)' : '文字'}
       </button>
-      {pdfTextItems && pdfTextItems.length > 0 && (
-        <button
-          onClick={handleImportPdfText}
-          disabled={busy}
-          type="button"
-          title="PDF から抽出した文字を、編集できるテキスト注記としてアクティブレイヤーに取り込む"
-        >
-          PDF文字を取り込む ({pdfTextItems.length})
-        </button>
+      {pdfTextItems && pdfTextItems.length > 0 && mode.kind !== 'pdf-text-pick' && (
+        <>
+          <button
+            onClick={handleImportPdfText}
+            disabled={busy}
+            type="button"
+            title="PDF から抽出した文字を、編集できるテキスト注記としてアクティブレイヤーに全件取り込む"
+          >
+            PDF文字を全取込 ({pdfTextItems.length})
+          </button>
+          <button
+            onClick={() => enterPdfTextPickMode()}
+            disabled={busy}
+            type="button"
+            title="PDF の文字を 1 つずつクリックして選び、必要な分だけ取り込む"
+          >
+            文字を選んで取込
+          </button>
+        </>
+      )}
+      {mode.kind === 'pdf-text-pick' && (
+        <>
+          <button
+            onClick={handleImportSelectedPdfText}
+            disabled={busy || selectedPdfTextIds.length === 0}
+            type="button"
+            style={activeButtonStyle}
+            title="選択した PDF 文字を編集可能な注記として取り込む"
+          >
+            ✓ 選んだ文字を取込 ({selectedPdfTextIds.length})
+          </button>
+          <button onClick={() => exitMode()} disabled={busy} type="button" title="選択取込をやめる (ESC)">
+            キャンセル
+          </button>
+        </>
       )}
       {project.drawing?.scale && (
         <button

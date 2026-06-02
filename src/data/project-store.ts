@@ -56,6 +56,8 @@ export type EditorMode =
   | { kind: 'dimension'; firstPointPx?: { x: number; y: number } | undefined }
   // F-18: テキスト注記モード。クリックした位置に文字を配置して編集する。
   | { kind: 'text' }
+  // F-18 個別取込: PDF 文字を 1 つずつ選んで注記化するモード。
+  | { kind: 'pdf-text-pick' }
   | {
       kind: 'wire';
       fromSymbolId?: string | undefined;
@@ -74,6 +76,8 @@ export interface ProjectState {
   pdfRotation: Rotation;
   /** 選択中のシンボル ID 配列 */
   selectedIds: string[];
+  /** F-18 個別取込: pick モードで取込対象に選んだ PDF 文字の ID 集合 (UI state、履歴対象外) */
+  selectedPdfTextIds: string[];
   /** 現在の操作モード */
   mode: EditorMode;
   /** 現在開いているプロジェクトファイルの絶対パス (新規未保存時は null) */
@@ -174,6 +178,10 @@ export interface ProjectActions {
   ) => void;
   /** 指定の PDF 文字を編集可能な TextAnnotation としてアクティブレイヤーに複製する */
   importPdfTextAsAnnotations: (ids: readonly string[]) => void;
+  // F-18 個別取込: PDF 文字を 1 つずつ選んで取り込むモード
+  enterPdfTextPickMode: () => void;
+  togglePdfTextPick: (id: string) => void;
+  clearPdfTextPick: () => void;
   // Phase 3 F-14: 表題欄
   setTitleBlock: (config: TitleBlockConfig | undefined) => void;
   // Phase 2-C2: 配線
@@ -259,6 +267,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
   pdfBuffer: null,
   pdfRotation: 0,
   selectedIds: [],
+  selectedPdfTextIds: [],
   mode: { kind: 'select' },
   currentFilePath: null,
   activeLayerId: pickFirstUserLayerId(initialProject.layers),
@@ -508,7 +517,18 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       selectedIds: [],
     }),
 
-  exitMode: () => set({ mode: { kind: 'select' } }),
+  exitMode: () => set({ mode: { kind: 'select' }, selectedPdfTextIds: [] }),
+
+  // F-18 個別取込: PDF 文字 pick モード
+  enterPdfTextPickMode: () =>
+    set({ mode: { kind: 'pdf-text-pick' }, selectedIds: [], selectedPdfTextIds: [] }),
+  togglePdfTextPick: (id) =>
+    set((s) => ({
+      selectedPdfTextIds: s.selectedPdfTextIds.includes(id)
+        ? s.selectedPdfTextIds.filter((x) => x !== id)
+        : [...s.selectedPdfTextIds, id],
+    })),
+  clearPdfTextPick: () => set({ selectedPdfTextIds: [] }),
 
   toggleGrid: () => {
     const current = get().project;
