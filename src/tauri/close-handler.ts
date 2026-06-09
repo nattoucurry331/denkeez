@@ -6,6 +6,8 @@
 
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { isDirty } from '../data/dirty-tracker';
+import { useProjectStore } from '../data/project-store';
+import { performSave } from '../components/menu-bar/save-actions';
 
 export type CloseDecision = 'save' | 'discard' | 'cancel';
 export type CloseConfirmHandler = () => Promise<CloseDecision>;
@@ -39,9 +41,20 @@ export async function setupCloseHandler(): Promise<() => void> {
     event.preventDefault();
     const decision = await confirmHandler();
     if (decision === 'save') {
-      // M4 で保存処理を組み込む。M1 では未対応なので警告のみで閉じる。
-      console.warn('[denkeez] save-on-close は M4 で実装予定。今回は保存せず閉じます。');
-      await appWindow.destroy();
+      // 「保存して閉じる」: 実際に保存してから閉じる(データ消失防止)。
+      // 新規未保存で「名前を付けて保存」をキャンセルした場合は閉じない(ウィンドウを残す)。
+      const state = useProjectStore.getState();
+      try {
+        const result = await performSave({
+          currentFilePath: state.currentFilePath,
+          project: state.project,
+          markSaved: state.markSaved,
+        });
+        if (result.saved) await appWindow.destroy();
+      } catch (e) {
+        // 保存に失敗したらウィンドウは閉じない(データを守る)
+        console.error('[denkeez] 保存して閉じるに失敗しました', e);
+      }
     } else if (decision === 'discard') {
       await appWindow.destroy();
     }

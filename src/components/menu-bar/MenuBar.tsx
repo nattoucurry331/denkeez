@@ -1,23 +1,21 @@
 // 上部メニューバー (Plan §3 / REQUIREMENTS.md §6.1)。
 // M1: PDF を開く / M3 dirty テスト / M4: 新規・開く・保存 / M5: PDF 出力 + 90° 回転
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useStore } from 'zustand';
 import { useProjectStore } from '../../data/project-store';
 import { deleteSelection } from '../../hooks/delete-selection';
 import { renderPdfPage, type Rotation } from '../../pdf/pdf-loader';
 import {
-  selectProjectFileToSave,
   selectPdfFileToSave,
   selectCsvFileToSave,
   selectJsonFileToSave,
-  writeProjectFile,
   writeBinaryFile,
   askConfirm,
   basename,
   ptToMm,
 } from '../../tauri/api';
-import { serializeProject } from '../../data/project-io';
+import { performSave, performSaveAs } from './save-actions';
 import { openPdfIntoStore, openProjectIntoStore } from '../../tauri/open-actions';
 import { exportProjectAsPdf, suggestedExportName } from '../../export/pdf-exporter';
 import { generateBomCsv, suggestedBomCsvName } from '../../export/csv-exporter';
@@ -158,20 +156,34 @@ export function MenuBar(): JSX.Element {
 
   const handleSave = (): Promise<void> =>
     wrap(async () => {
-      const targetPath =
-        currentFilePath ?? (await selectProjectFileToSave(suggestedName(project.meta.name)));
-      if (!targetPath) return;
-      await writeProjectFile(targetPath, serializeProject(project));
-      markSaved(targetPath);
+      const r = await performSave({ currentFilePath, project, markSaved });
+      if (r.saved) setInfo(`保存しました: ${basename(r.path ?? '')}`);
     });
 
   const handleSaveAs = (): Promise<void> =>
     wrap(async () => {
-      const targetPath = await selectProjectFileToSave(suggestedName(project.meta.name));
-      if (!targetPath) return;
-      await writeProjectFile(targetPath, serializeProject(project));
-      markSaved(targetPath);
+      const r = await performSaveAs({ currentFilePath, project, markSaved });
+      if (r.saved) setInfo(`保存しました: ${basename(r.path ?? '')}`);
     });
+
+  // UI改修1: Ctrl+S = 上書き保存 / Ctrl+Shift+S = 名前を付けて保存。
+  // 入力欄フォーカス中・ダイアログ表示中は発火させない(ブラウザ/ダイアログに委ねる)。
+  const saveHotkeyRef = useRef({ handleSave, handleSaveAs, busy });
+  saveHotkeyRef.current = { handleSave, handleSaveAs, busy };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 's') return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      if (document.querySelector('[role="dialog"]')) return; // 各種ダイアログ表示中は無効
+      e.preventDefault();
+      if (saveHotkeyRef.current.busy) return;
+      if (e.shiftKey) void saveHotkeyRef.current.handleSaveAs();
+      else void saveHotkeyRef.current.handleSave();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Phase 2-E3b: 「PDF 出力」ボタン → 設定ダイアログ → 確定 → ファイル保存
   const handleOpenPdfDialog = (): void => {
@@ -296,8 +308,8 @@ export function MenuBar(): JSX.Element {
       <button onClick={handleNew} disabled={busy} type="button">
         新規
       </button>
-      <button onClick={handleOpenProject} disabled={busy} type="button">
-        開く
+      <button onClick={handleOpenProject} disabled={busy} type="button" title="保存した .dkz プロジェクトを開く">
+        プロジェクトを開く
       </button>
       <button onClick={handleSave} disabled={busy || (!dirty && !!currentFilePath)} type="button">
         保存{dirty ? ' *' : ''}
@@ -334,8 +346,8 @@ export function MenuBar(): JSX.Element {
         🗑 削除
       </button>
       <span style={separatorStyle}>|</span>
-      <button onClick={handleOpenPdf} disabled={busy} type="button">
-        ファイル → PDF を開く
+      <button onClick={handleOpenPdf} disabled={busy} type="button" title="元図面の PDF を開いて背景に読み込む">
+        PDFを開く
       </button>
       <button
         onClick={handleRotatePdf}
@@ -501,13 +513,15 @@ export function MenuBar(): JSX.Element {
           aria-label="シンボルサイズ倍率"
         />
       </label>
-      <button
-        onClick={() => setDirty(!dirty)}
-        type="button"
-        title="dirty フラグを切り替えて未保存終了確認ダイアログをテスト"
-      >
-        (テスト) dirty: {dirty ? 'true' : 'false'}
-      </button>
+      {import.meta.env.DEV && (
+        <button
+          onClick={() => setDirty(!dirty)}
+          type="button"
+          title="dirty フラグを切り替えて未保存終了確認ダイアログをテスト"
+        >
+          (テスト) dirty: {dirty ? 'true' : 'false'}
+        </button>
+      )}
       <button
         onClick={() => setAboutOpen(true)}
         type="button"
@@ -571,11 +585,6 @@ export function MenuBar(): JSX.Element {
       />
     </header>
   );
-}
-
-function suggestedName(name: string): string {
-  const safe = name.trim() === '' ? 'untitled' : name;
-  return `${safe}.dkz`;
 }
 
 // BomPanel と同じキーを参照 (UI 状態の便宜的な永続化)。
