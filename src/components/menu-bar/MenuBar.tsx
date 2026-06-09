@@ -305,19 +305,27 @@ export function MenuBar(): JSX.Element {
 
   return (
     <header style={menuBarStyle}>
+      <div style={groupStyle}>
       <button onClick={handleNew} disabled={busy} type="button">
         新規
       </button>
       <button onClick={handleOpenProject} disabled={busy} type="button" title="保存した .dkz プロジェクトを開く">
         プロジェクトを開く
       </button>
-      <button onClick={handleSave} disabled={busy || (!dirty && !!currentFilePath)} type="button">
+      <button
+        onClick={handleSave}
+        disabled={busy || (!dirty && !!currentFilePath)}
+        type="button"
+        title="プロジェクトを保存 (Ctrl+S)"
+        style={dirty ? primaryActionStyle : undefined}
+      >
         保存{dirty ? ' *' : ''}
       </button>
       <button onClick={handleSaveAs} disabled={busy} type="button">
         名前を付けて保存
       </button>
-      <span style={separatorStyle}>|</span>
+      </div>
+      <div style={groupStyle}>
       {/* 発見性改善: マウス操作で「元に戻す / やり直す / 削除」できるようボタン化 (F-06/F-11) */}
       <button
         onClick={handleUndo}
@@ -345,7 +353,8 @@ export function MenuBar(): JSX.Element {
       >
         🗑 削除
       </button>
-      <span style={separatorStyle}>|</span>
+      </div>
+      <div style={groupStyle}>
       <button onClick={handleOpenPdf} disabled={busy} type="button" title="元図面の PDF を開いて背景に読み込む">
         PDFを開く
       </button>
@@ -385,7 +394,8 @@ export function MenuBar(): JSX.Element {
       >
         表題欄{project.titleBlock?.enabled ? ' ✓' : ''}…
       </button>
-      <span style={separatorStyle}>|</span>
+      </div>
+      <div style={groupStyle}>
       <button
         onClick={() => (mode.kind === 'scale' ? exitMode() : enterScaleMode())}
         disabled={busy || !pdfCanvas}
@@ -485,7 +495,8 @@ export function MenuBar(): JSX.Element {
           スケール解除
         </button>
       )}
-      <span style={separatorStyle}>|</span>
+      </div>
+      <div style={groupStyle}>
       <button
         onClick={toggleSymbolTransparent}
         type="button"
@@ -522,6 +533,8 @@ export function MenuBar(): JSX.Element {
           (テスト) dirty: {dirty ? 'true' : 'false'}
         </button>
       )}
+      </div>
+      <div style={rightClusterStyle}>
       <button
         onClick={() => setAboutOpen(true)}
         type="button"
@@ -552,6 +565,7 @@ export function MenuBar(): JSX.Element {
           エラー: {error}
         </span>
       )}
+      </div>
       {project.drawing && (
         <PdfExportDialog
           open={pdfDialogOpen}
@@ -602,12 +616,28 @@ const menuBarStyle: React.CSSProperties = {
   display: 'flex',
   gap: 8,
   alignItems: 'center',
-  padding: '8px 16px',
+  padding: '6px 12px',
   borderBottom: '1px solid #ccc',
   background: '#f5f5f5',
   flexWrap: 'wrap',
 };
-const separatorStyle: React.CSSProperties = { color: '#aaa', margin: '0 4px' };
+// UI改修3: 機能の島(ファイル/編集/図面・出力/作図/表示)。近接した関連ボタンを
+// 薄い枠でまとめ、島単位で折り返す(島内の相対位置が安定)。
+const groupStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
+  padding: '2px 6px',
+  borderRadius: 6,
+  background: '#e9e9e9',
+};
+// 右端クラスタ: ヘルプ・パス・更新通知・処理状況をまとめて右寄せ。
+const rightClusterStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  marginLeft: 'auto',
+};
 const pathStyle: React.CSSProperties = {
   fontSize: '0.8rem',
   color: '#666',
@@ -625,8 +655,15 @@ const activeButtonStyle: React.CSSProperties = {
   borderColor: '#0080ff',
   fontWeight: 'bold',
 };
+// UI改修3: プライマリ強調は「保存(未保存時)」1 つだけに限定し、青の意味を
+// 「アクティブ=活性モード(activeButtonStyle)」と衝突させない。
+const primaryActionStyle: React.CSSProperties = {
+  background: '#0080ff',
+  color: '#fff',
+  borderColor: '#0080ff',
+  fontWeight: 'bold',
+};
 const updateBadgeStyle: React.CSSProperties = {
-  marginLeft: 'auto',
   padding: '4px 10px',
   background: '#fff8e0',
   border: '1px solid #f0a000',
