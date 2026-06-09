@@ -27,6 +27,7 @@ import {
 } from '../../canvas/measure-overlay-layer';
 import { formatDistanceMm } from '../../utils/dimension-format';
 import { DimensionLayer } from '../../canvas/dimension-layer';
+import { ModeContextBar } from './ModeContextBar';
 import { TextAnnotationLayer } from '../../canvas/text-annotation-layer';
 import { PdfTextLayer } from '../../canvas/pdf-text-layer';
 import { WireLayer } from '../../canvas/wire-layer';
@@ -669,6 +670,7 @@ export function CanvasArea(): JSX.Element {
           </button>
         </div>
       )}
+      <ModeContextBar />
       <div ref={containerRef} style={stageContainerStyle}>
         <Minimap containerSize={containerSize} />
         <Stage

@@ -39,11 +39,7 @@ export function MenuBar(): JSX.Element {
   const pdfRotation = useProjectStore((s) => s.pdfRotation);
   const mode = useProjectStore((s) => s.mode);
   const selectedIds = useProjectStore((s) => s.selectedIds);
-  const pdfTextItems = useProjectStore((s) => s.project.pdfTextItems);
   const enterTextMode = useProjectStore((s) => s.enterTextMode);
-  const importPdfTextAsAnnotations = useProjectStore((s) => s.importPdfTextAsAnnotations);
-  const enterPdfTextPickMode = useProjectStore((s) => s.enterPdfTextPickMode);
-  const selectedPdfTextIds = useProjectStore((s) => s.selectedPdfTextIds);
   const newProject = useProjectStore((s) => s.newProject);
   const markSaved = useProjectStore((s) => s.markSaved);
   const setDirty = useProjectStore((s) => s.setDirty);
@@ -54,7 +50,6 @@ export function MenuBar(): JSX.Element {
   const enterDimensionMode = useProjectStore((s) => s.enterDimensionMode);
   const setTitleBlock = useProjectStore((s) => s.setTitleBlock);
   const exitMode = useProjectStore((s) => s.exitMode);
-  const setScale = useProjectStore((s) => s.setScale);
   const enterWireMode = useProjectStore((s) => s.enterWireMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,26 +118,7 @@ export function MenuBar(): JSX.Element {
       }
     });
 
-  // F-18: PDF 文字を編集可能な注記として一括取り込み (アクティブレイヤーへ)
-  const handleImportPdfText = (): void => {
-    setError(null);
-    setInfo(null);
-    const items = pdfTextItems ?? [];
-    if (items.length === 0) return;
-    importPdfTextAsAnnotations(items.map((t) => t.id));
-    setInfo(`PDF文字 ${items.length} 件を編集可能なテキスト注記に取り込みました`);
-  };
-
-  // F-18 個別取込: pick モードで選んだ PDF 文字だけを注記化して取り込む
-  const handleImportSelectedPdfText = (): void => {
-    setError(null);
-    setInfo(null);
-    const ids = selectedPdfTextIds;
-    if (ids.length === 0) return;
-    importPdfTextAsAnnotations(ids);
-    exitMode(); // pick モード終了 + 選択クリア
-    setInfo(`選択した PDF文字 ${ids.length} 件を取り込みました`);
-  };
+  // PDF文字の取込・スケール解除は ModeContextBar(キャンバス直上)へ移設済み (UI改修4)。
 
   // 発見性改善: 選択中オブジェクトの削除 (Delete キーと同じ処理を共有)
   const handleDelete = (): void => {
@@ -441,60 +417,6 @@ export function MenuBar(): JSX.Element {
       >
         {mode.kind === 'text' ? '✓ 文字モード (ESC で解除)' : '文字'}
       </button>
-      {pdfTextItems && pdfTextItems.length > 0 && mode.kind !== 'pdf-text-pick' && (
-        <>
-          <button
-            onClick={handleImportPdfText}
-            disabled={busy}
-            type="button"
-            title="PDF から抽出した文字を、編集できるテキスト注記としてアクティブレイヤーに全件取り込む"
-          >
-            PDF文字を全取込 ({pdfTextItems.length})
-          </button>
-          <button
-            onClick={() => enterPdfTextPickMode()}
-            disabled={busy}
-            type="button"
-            title="PDF の文字を 1 つずつクリックして選び、必要な分だけ取り込む"
-          >
-            文字を選んで取込
-          </button>
-        </>
-      )}
-      {mode.kind === 'pdf-text-pick' && (
-        <>
-          <button
-            onClick={handleImportSelectedPdfText}
-            disabled={busy || selectedPdfTextIds.length === 0}
-            type="button"
-            style={activeButtonStyle}
-            title="選択した PDF 文字を編集可能な注記として取り込む"
-          >
-            ✓ 選んだ文字を取込 ({selectedPdfTextIds.length})
-          </button>
-          <button onClick={() => exitMode()} disabled={busy} type="button" title="選択取込をやめる (ESC)">
-            キャンセル
-          </button>
-        </>
-      )}
-      {project.drawing?.scale && (
-        <button
-          onClick={() =>
-            wrap(async () => {
-              const ok = await askConfirm(
-                'スケール校正を解除しますか? 紙面実寸モードに戻ります。',
-                'スケール解除',
-              );
-              if (ok) setScale(undefined);
-            })
-          }
-          disabled={busy}
-          type="button"
-          title="スケール校正を解除して紙面実寸モードに戻す"
-        >
-          スケール解除
-        </button>
-      )}
       </div>
       <div style={groupStyle}>
       <button
