@@ -5,7 +5,7 @@ export const APP_NAME = 'Denkeez';
 export const APP_NAME_KANA = 'デンキーズ';
 export const APP_NAME_DISPLAY = `${APP_NAME}（${APP_NAME_KANA}・仮称）`;
 export const APP_FILE_EXTENSION = 'dkz';
-export const APP_VERSION = '0.23.0';
+export const APP_VERSION = '0.24.0';
 
 // プロジェクトファイルのスキーマバージョン。
 // REQUIREMENTS.md §5.2 — 後方互換のためファイルに保存し、

@@ -7,8 +7,11 @@ import { useViewportStore } from '../../data/viewport-store';
 import { DEFAULT_GRID_CONFIG, GRID_SPACING_OPTIONS } from '../../data/types';
 import { APP_VERSION } from '../../shared/constants/app';
 import { computeScaleRatio } from '../../utils/scale-ratio';
+import { modeKindToLabel } from '../../utils/mode-label';
 
 export function StatusBar(): JSX.Element {
+  // UI改修2: 現在の操作モードを常時表示 (kind のみ購読 = wire の waypoints 更新で再描画しない)
+  const modeKind = useProjectStore((s) => s.mode.kind);
   const viewportScale = useViewportStore((s) => s.scale);
   const cursorMm = useViewportStore((s) => s.cursorMm);
   const drawing = useProjectStore((s) => s.project.drawing);
@@ -22,6 +25,10 @@ export function StatusBar(): JSX.Element {
 
   return (
     <footer style={statusBarStyle}>
+      <span style={modeBadgeStyle} title="現在の操作モード">
+        {modeKindToLabel(modeKind)}
+      </span>
+      <span style={separator}>|</span>
       <span style={cellStyle}>
         拡大率: <strong>{Math.round(viewportScale * 100)}%</strong>
       </span>
@@ -82,6 +89,15 @@ const cellStyle: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 2,
+};
+const modeBadgeStyle: React.CSSProperties = {
+  display: 'inline-block',
+  padding: '1px 8px',
+  background: '#0080ff',
+  color: '#fff',
+  borderRadius: 8,
+  fontWeight: 'bold',
+  fontSize: '0.78rem',
 };
 const separator: React.CSSProperties = { color: '#aaa', margin: '0 4px' };
 const selectStyle: React.CSSProperties = {
